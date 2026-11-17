@@ -4,7 +4,7 @@ Shared base for the White daily puzzle games (Godot 4.7.2, GDScript): the Dutch 
 random generator, precomputed puzzle loading, attempt records with undo and two count modes, a robust progress file,
 Dutch/English texts, the shared day screen, a test runner base, a precompute tool skeleton and CI building blocks.
 
-Status: version 0.1.0. See `docs/design.md` and `docs/adr/`.
+Status: version 0.2.0. See `docs/design.md` and `docs/adr/`.
 
 ## Use in a game
 
@@ -12,7 +12,7 @@ The repository root is the addon root. Add it as a submodule at a release tag:
 
 ```bash
 git submodule add https://github.com/dm-utils/white-kit.git addons/white_kit
-git -C addons/white_kit checkout v0.1.0
+git -C addons/white_kit checkout v0.2.0
 git add .gitmodules addons/white_kit
 ```
 
