@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/white_kit/tests/fixtures/runner_script_error.gd" id="1"]
+
+[node name="RunnerScriptError" type="Node"]
+script = ExtResource("1")
