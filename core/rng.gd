@@ -84,10 +84,12 @@ func next_u32() -> int:
 
 ## Inclusive and unbiased (rejection sampling). Always draws at least once.
 func range_int(from: int, to: int) -> int:
-	var n := to - from + 1
-	if from > to or n > 4294967296:
+	# to - from wraps negative when the span exceeds int64
+	var span := to - from
+	if from > to or span < 0 or span >= 4294967296:
 		push_error("WhiteRng.range_int: bad range %d..%d" % [from, to])
 		return from
+	var n := span + 1
 	var limit := 4294967296 - (4294967296 % n)
 	var r := next_u32()
 	while r >= limit:

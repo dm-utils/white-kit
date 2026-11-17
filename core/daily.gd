@@ -29,21 +29,32 @@ static func today() -> String:
 	return date_at(int(Time.get_unix_time_from_system()))
 
 
-## Puzzle number of a date; first_day is #1, the day before is 0.
+## Puzzle number of a date; first_day is #1, the day before is 0. An invalid date: error and 0 (use is_date first).
 static func number(date: String, first_day: String) -> int:
+	if not _valid(date) or not _valid(first_day):
+		push_error("WhiteDaily.number: invalid date '%s' or '%s'" % [date, first_day])
+		return 0
 	var a := Time.get_unix_time_from_datetime_string(first_day + "T00:00:00")
 	var b := Time.get_unix_time_from_datetime_string(date + "T00:00:00")
 	return int(round((b - a) / 86400.0)) + 1
 
 
-## Calendar arithmetic via 12:00 UTC of the date, so no day is skipped or doubled.
+## Calendar arithmetic via 12:00 UTC of the date, so no day is skipped or doubled. An invalid date: error and the
+## date back unchanged (use is_date first).
 static func add_days(date: String, days: int) -> String:
+	if not _valid(date):
+		push_error("WhiteDaily.add_days: invalid date '%s'" % date)
+		return date
 	var noon := Time.get_unix_time_from_datetime_string(date + "T12:00:00")
 	return Time.get_date_string_from_unix_time(noon + days * 86400)
 
 
 ## Exactly "YYYY-MM-DD" and a real calendar date.
 static func is_date(text: String) -> bool:
+	return _valid(text)
+
+
+static func _valid(text: String) -> bool:
 	if text.length() != 10:
 		return false
 	for i in 10:
@@ -61,4 +72,4 @@ static func is_date(text: String) -> bool:
 		return false
 	var leap := year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
 	var last: int = [31, 29 if leap else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]
-	return day <= last and add_days(text, 0) == text
+	return day <= last
