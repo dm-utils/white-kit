@@ -5,7 +5,8 @@ are in `docs/adr/`.
 
 ## Engine and layout
 
-- Godot 4.7.2, GDScript only. The version is pinned for the whole series in `ci/setup-godot/action.yml`.
+- Godot 4.7.2, GDScript only. The version is pinned for the whole series in `ci/setup-godot/action.yml`. The test
+  runner needs Godot 4.5 or later from kit 0.2.0 on (ADR 0005).
 - The repository root is the addon root, installed in games at `res://addons/white_kit/` (fixed path). There is no
   `project.godot` and no `plugin.cfg` in the repository.
 
@@ -19,6 +20,10 @@ are in `docs/adr/`.
 | `templates/` | Game workflow template and the host project for the kit's tests. Has a `.gdignore`. |
 | `docs/` | Design, conventions, glossary, ADRs. Has a `.gdignore`. |
 | `build/` | Local output (host project). Ignored by git. |
+
+- Godot's `.uid` files (`<script>.gd.uid`) are committed next to their script. Run `tools/kit_host.sh` (which imports)
+  before committing a new or renamed script, so its `.uid` exists and is committed in the same commit. Without them a
+  game's first import writes them into the submodule, which then shows as modified.
 
 ## Licence
 
@@ -34,17 +39,23 @@ are in `docs/adr/`.
 - Every global class has a `class_name` with the prefix `White` (`WhiteDaily`, `WhiteRng`, ...). File names are the
   class name without the prefix in `snake_case` (`core/daily.gd`).
 - Members and functions internal to a class start with `_`. Virtual hooks that games override also start with `_` and
-  are listed in the design; nothing else with `_` may be called from a game.
+  are listed in the design; nothing else with `_` may be called from a game. Kit tests may call internal functions
+  (for example `WhitePrecompute._run`).
+- A game reacts to screen events through the screen's signals (`level_shown`, `attempt_solved`, `progress_saved`,
+  `refreshed`) or hooks, never by overriding internal functions such as `_refresh` or `_open_day`.
 - Classes in `core/` extend `RefCounted` and mostly expose static functions; `WhiteAttempt`, `WhiteRng` and
   `WhitePuzzleStore` are instances.
 - Kit code compiles without warnings under Godot's default warning settings (the host project uses the defaults).
   Intended integer divisions carry `@warning_ignore("integer_division")`.
+- Kit code produces no engine error output on expected input, including invalid user input that it rejects (for
+  example `WhiteDaily.is_date` checks the date parts before calling `Time`). `push_error` is only for programming
+  errors (an unimplemented hook, an impossible range).
 - Documentation comments use `##` on the class and on public functions; ordinary comments use `#`. All comments and
   identifiers are in English.
 - The kit contains no game-specific code, names or texts. Default texts are generic and exist in Dutch and English with
   the same keys. Optional keys that the screen reads only when a game defines them (`count_final`) are not in the
   defaults.
-- Test and fixture scripts declare no `class_name`; they are loaded with `preload`. The single exception is
+- Test and fixture scripts declare no `class_name`; they are loaded with `preload` or by path. The single exception is
   `WhiteTestRunner` (`tests/test_runner.gd`), which games extend.
 - No credentials, keys or personal data in the repository.
 
@@ -60,6 +71,8 @@ are in `docs/adr/`.
 - Rules code (in games) is deterministic and integer-based; the kit never compares states itself.
 - Published puzzle data is never regenerated; new days are added with the precompute tool's `--merge`, which refuses to
   change an existing key.
+- Puzzle data uses JSON integers for whole numbers and strings for integers of 2^53 or more; the merge turns whole
+  floats back into integers (design 5.14).
 
 ## Records and saved data
 
@@ -77,10 +90,15 @@ tools/kit_host.sh            # creates build/host, imports, runs res://addons/wh
 ```
 
 - The runner prints `tests: N passed, M failed` and exits with code 1 on any failure; `--min-checks=N` makes it fail
-  when fewer checks ran.
+  when fewer checks ran. Kit CI and the game template use `--min-checks=250` for the kit tests; raise it when checks
+  are added.
+- In 0.1.0 a GDScript runtime error inside a test silently skips the rest of that test function; from 0.2.0 the runner
+  counts it as a failure (ADR 0005). Until then, read the test output for `SCRIPT ERROR` lines.
 - `check(ok, what)`: `what` describes the expected behaviour in plain words, so a failure message explains itself.
-- Every public function and every screen hook has at least one test; every acceptance criterion in the design has a
-  test.
+- Every public function and every screen hook and signal has at least one test; every acceptance criterion in the
+  design has a test.
+- Behaviour that depends on a process exit code or on command-line output (the precompute tool, the runner itself) is
+  tested in a child Godot process (`OS.execute(OS.get_executable_path(), ...)`), not by calling `quit`.
 - Tests that write files use names under `user://` starting with `white_kit_test_` and delete them afterwards; they
   never touch `user://progress.json`, because the kit tests also run inside games.
 - Reference vectors: CI compares `tools/rng_vectors.gd` with `tools/reference/white_rng.py` line by line.
@@ -90,8 +108,10 @@ tools/kit_host.sh            # creates build/host, imports, runs res://addons/wh
 - `develop` is the working branch; `main` is protected and updated through pull requests only; CI runs on pushes to
   both, on pull requests to `main` and on tags. This is the same model as the games.
 - Semantic versions in `VERSION` and `WhiteKit.VERSION` (always equal; a test checks this). `CHANGELOG.md` has a
-  section per version, newest first, with breaking changes marked.
-- A release is a commit on `main` tagged `v<VERSION>`; CI on the tag checks that the tag matches `VERSION`.
+  section per version, newest first, with breaking changes marked. A new hook or signal is a MINOR version.
+- A release is tagged `v<VERSION>` on the commit merged to `main`; CI on the tag checks that the tag matches
+  `VERSION`. `v0.1.0` sits on a `develop` commit; the first pull request to `main` is therefore a merge commit (no
+  squash, no rebase). Tags are never moved.
 - Games pin a tag; their CI rejects any other submodule commit.
 - Branch names: `feature/<description>`, `fix/<description>`, `chore/<description>`.
 - Commit messages in English, imperative, short subject line.

@@ -1,6 +1,6 @@
 # 0004 Shared day screen as a base class with hooks
 
-Status: accepted (2026-11-17)
+Status: accepted (2026-11-17); amended (2026-11-17, see below)
 
 ## Context
 
@@ -54,3 +54,46 @@ practice. White Shift's UI tests use the screen's member variables and functions
 - Layout changes to the base class affect every game at its next kit update; games see them in their screenshot checks.
 - The base class is the place where later features shared by the series land (statistics, settings, an engine sign-in
   button), each as a kit version.
+
+## Amendment 1 (2026-11-17, in 0.1.0): signal `refreshed()`
+
+Context: White Shift's Best route button is an extra button created by the game (`_extra_buttons`). Its text must
+follow the language toggle, but only the screen knows when texts are refreshed, and no hook covered this. Found while
+building 0.1.0.
+
+Decision: `WhiteDayScreen` emits `signal refreshed()` as the last action of every `_refresh()`, in both branches (with
+and without puzzles). A game connects to it to update what the screen does not manage, such as the text of its extra
+buttons. Handlers must not change members the screen sets in `_refresh()`.
+
+Alternatives:
+- Let the game override `_refresh()` and call `super()`: works, but `_refresh` is internal and the order of the game's
+  code against the screen's (and against later kit changes) is then the game's problem; the hook table exists to avoid
+  exactly that. Rejected.
+- A hook `_extra_texts() -> void` called at the end of `_refresh()`: equivalent, but every game must subclass to use
+  it, while a signal also serves other listeners (a later statistics panel). Rejected in favour of the signal.
+- Return button texts as text keys from `_extra_buttons()` and let the screen set them: covers buttons only and needs
+  a new return type. Rejected.
+
+Consequences: no behaviour change for games that ignore the signal; White Shift uses it for Best route.
+
+## Amendment 2 (2026-11-17, planned for 0.2.0): practice-only screen, hook `_practice_only()`
+
+Context: White Tally's phase 1 has no daily puzzles, only practice sets (White Tally design, section 7.1 R3). With the
+0.1.0 screen it would open on a "no puzzle" day and show a mode button that leads nowhere. Its interim solution
+overrides `_open_day()` and `_refresh()`, both internal.
+
+Decision: a hook `_practice_only() -> bool` (default false). When true, the screen opens practice instead of the day,
+hides the mode button and ignores `_toggle_mode()`; everything else is practice behaviour. Specification and acceptance:
+design section 13.1.
+
+Alternatives:
+- Name it `_start_in_practice()` (White Tally's suggestion): describes only the start, while the hook also hides the
+  mode button and blocks switching to the day. Rejected for the clearer name; the behaviour is what White Tally asked.
+- Two hooks, one for the start mode and one for the mode button's visibility: more freedom, but a combination of
+  "start in practice, mode button visible" is already the normal screen after one click, and "start on the day, no mode
+  button" has no requester. Rejected (YAGNI).
+- Keep White Tally's interim overrides of `_open_day()` and `_refresh()`: no kit change, but the game then depends on
+  internal functions whose content may change in any kit version. Rejected.
+
+Consequences: a MINOR version (0.2.0). White Shift is unaffected (default false). White Tally removes its interim
+overrides when it updates to 0.2.0. When White Tally gets daily puzzles in phase 2 it returns false from the hook.
