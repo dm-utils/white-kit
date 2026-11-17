@@ -16,6 +16,7 @@ const SUITES := [
 	"res://addons/white_kit/tests/test_edge.gd",
 	"res://addons/white_kit/tests/test_precompute_edge.gd",
 	"res://addons/white_kit/tests/test_release_020.gd",
+	"res://addons/white_kit/tests/test_retest_020.gd",
 ]
 
 
