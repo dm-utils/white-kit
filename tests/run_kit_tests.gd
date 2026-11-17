@@ -12,6 +12,9 @@ const SUITES := [
 	"res://addons/white_kit/tests/test_text_format.gd",
 	"res://addons/white_kit/tests/test_day_screen.gd",
 	"res://addons/white_kit/tests/test_precompute.gd",
+	"res://addons/white_kit/tests/test_independent.gd",
+	"res://addons/white_kit/tests/test_edge.gd",
+	"res://addons/white_kit/tests/test_precompute_edge.gd",
 ]
 
 
