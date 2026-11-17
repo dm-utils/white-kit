@@ -7,6 +7,7 @@ const DIR := "res://addons/white_kit/tests/fixtures/"
 const SAVE := "user://white_kit_test_progress.json"
 
 var final_practice := false
+var practice_only := false
 var count_final_text := ""
 var play_message_state := -1 ## state that shows "NOMOVE"; -1 = hook not overridden
 var shown: Array = []
@@ -51,6 +52,10 @@ func _load_practice(index: int) -> Array:
 
 func _practice_count() -> int:
 	return store.practice_count()
+
+
+func _practice_only() -> bool:
+	return practice_only
 
 
 func _count_mode(is_practice: bool) -> int:

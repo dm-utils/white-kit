@@ -83,6 +83,11 @@ func _practice_count() -> int:
 	return 0
 
 
+## True: the screen only has practice sets (no daily puzzle, no mode button)
+func _practice_only() -> bool:
+	return false
+
+
 func _count_mode(_is_practice: bool) -> int:
 	return WhiteAttempt.CountMode.EVERY_MOVE
 
@@ -143,6 +148,8 @@ func _ready() -> void:
 	practice_index = randi() % maxi(1, _practice_count())
 	if _debug.has("practice"):
 		practice_index = 0
+		_open_practice()
+	elif _practice_only():
 		_open_practice()
 	else:
 		_open_day()
@@ -286,6 +293,7 @@ func _refresh() -> void:
 	else:
 		subtitle.text = WhiteText.t("today") % WhiteDaily.number(date, _first_day())
 	mode_btn.text = WhiteText.t("daily") if practice else WhiteText.t("practice")
+	mode_btn.visible = not _practice_only()
 	lang_btn.text = WhiteText.t("lang")
 	undo_btn.text = WhiteText.t("undo")
 	restart_btn.text = WhiteText.t("restart")
@@ -428,6 +436,8 @@ func _next() -> void:
 
 
 func _toggle_mode() -> void:
+	if _practice_only():
+		return
 	if practice:
 		_open_day()
 	else:
