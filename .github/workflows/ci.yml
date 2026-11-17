@@ -1,0 +1,57 @@
+# CI of the kit itself: tests in a host project, reference vectors, determinism grep, tag check.
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: host/addons/white_kit
+
+      - name: Host project
+        run: cp host/addons/white_kit/templates/host/project.godot host/project.godot
+
+      - uses: ./host/addons/white_kit/ci/setup-godot
+
+      - name: Import
+        run: timeout 600 godot --headless --path host --import
+
+      - name: Kit tests
+        run: timeout 300 godot --headless --path host res://addons/white_kit/tests/run_kit_tests.tscn -- --min-checks=250
+
+      - name: Reference vectors (Godot against the Python reference)
+        run: |
+          pick='^(fnv|seed|state|u32|int|float) '
+          timeout 120 godot --headless --path host -s res://addons/white_kit/tools/rng_vectors.gd | grep -E "$pick" > godot.txt
+          python3 -I host/addons/white_kit/tools/reference/white_rng.py > python.txt
+          diff godot.txt python.txt
+
+      - name: Determinism (no engine random in core/ and tools/)
+        working-directory: host/addons/white_kit
+        run: |
+          if grep -rnE 'RandomNumberGenerator|randi\(|randf\(|randomize\(' core tools --include='*.gd'; then
+            echo "::error::engine random used in core/ or tools/"; exit 1
+          fi
+
+      - name: Tag matches VERSION
+        if: github.ref_type == 'tag'
+        working-directory: host/addons/white_kit
+        run: |
+          test "$GITHUB_REF_NAME" = "v$(cat VERSION)" || { echo "::error::tag $GITHUB_REF_NAME does not match VERSION $(cat VERSION)"; exit 1; }

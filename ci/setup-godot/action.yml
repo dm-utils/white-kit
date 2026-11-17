@@ -1,0 +1,52 @@
+name: Setup Godot
+description: Download, verify (SHA-512), cache and install Godot with its export templates
+
+inputs:
+  version:
+    description: Godot version (stable release)
+    default: "4.7.2"
+  sha512-editor:
+    description: SHA-512 of the Linux editor zip
+    # from https://github.com/godotengine/godot/releases/download/4.7.2-stable/SHA512-SUMS.txt
+    default: 9aa00f7a605200940bce3027a567b782f49bd8e940dd06ae9e987bd65aee1b1467edd56ed84fcdcbdd44354bf613bdbb4e5d2913e925850368e150c59ed54c65
+  sha512-templates:
+    description: SHA-512 of the export templates tpz
+    default: ca4d71c4d7b81dfc15d1a98baa07534aa95b03fdda78a0075b06672e1648d2e5f40980c9adc28d23e1b92e732ee7bf3461997aa804af74ec2fcd7a93ccb84079
+
+runs:
+  using: composite
+  steps:
+    - name: Cache Godot ${{ inputs.version }}
+      id: godot-cache
+      uses: actions/cache@v5
+      with:
+        path: ~/godot
+        key: godot-${{ inputs.version }}-${{ inputs.sha512-editor }}
+
+    - name: Download Godot (SHA-512 checked)
+      if: steps.godot-cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        GODOT_VERSION: ${{ inputs.version }}
+        GODOT_SHA512_EDITOR: ${{ inputs.sha512-editor }}
+        GODOT_SHA512_TEMPLATES: ${{ inputs.sha512-templates }}
+      run: |
+        mkdir -p ~/godot && cd ~/godot
+        base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+        curl -sSfLO "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+        curl -sSfLO "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+        echo "${GODOT_SHA512_EDITOR}  Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" | sha512sum -c -
+        echo "${GODOT_SHA512_TEMPLATES}  Godot_v${GODOT_VERSION}-stable_export_templates.tpz" | sha512sum -c -
+        unzip -q "Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+        unzip -q "Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+        rm -f ./*.zip ./*.tpz
+
+    - name: Install Godot
+      shell: bash
+      env:
+        GODOT_VERSION: ${{ inputs.version }}
+      run: |
+        sudo ln -sf ~/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+        mkdir -p ~/.local/share/godot/export_templates
+        ln -sfn ~/godot/templates ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+        godot --version
