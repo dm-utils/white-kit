@@ -1,6 +1,6 @@
 # White Kit - design
 
-Status: version 0.1.0 designed, not built yet.
+Status: version 0.1.0 built.
 Decisions with their trade-offs are in `docs/adr/`; terms are defined in `docs/glossary.md`; code and release rules
 are in `docs/conventions.md`.
 

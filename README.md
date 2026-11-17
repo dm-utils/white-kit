@@ -4,7 +4,7 @@ Shared base for the White daily puzzle games (Godot 4.7.2, GDScript): the Dutch 
 random generator, precomputed puzzle loading, attempt records with undo and two count modes, a robust progress file,
 Dutch/English texts, the shared day screen, a test runner base, a precompute tool skeleton and CI building blocks.
 
-Status: designed, not built yet. See `docs/design.md` and `docs/adr/`.
+Status: version 0.1.0. See `docs/design.md` and `docs/adr/`.
 
 ## Use in a game
 
