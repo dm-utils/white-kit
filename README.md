@@ -25,3 +25,7 @@ Clone a game with `git clone --recurse-submodules` (or run `git submodule update
 ```bash
 tools/kit_host.sh     # builds a host project in build/host, imports it and runs the kit tests
 ```
+
+## Licence
+
+All rights reserved. The source is public to read; no licence is granted to use, copy, modify or distribute it.

@@ -27,6 +27,8 @@ into an empty neighbouring cell, so a move needs more than one character.
   one-letter tokens, so its existing records and saves stay valid.
 - Only effective moves are recorded; a game's rules decide which moves are effective by returning `null` from
   `apply` for a rejected move.
+- The shared screen labels the counter with the text key `count`; in `FINAL_ONLY` it uses the optional key
+  `count_final` when the game defines it, so a player can see that only the final solution counts.
 
 ## Alternatives considered
 
@@ -39,11 +41,13 @@ into an empty neighbouring cell, so a move needs more than one character.
   add it without breaking old records.
 - Separator-based records (for example `C3R,D4L`): flexible move lengths, but larger and a new format for White Shift.
   Rejected while fixed-width tokens suffice.
+- A mandatory `count_final` key in the kit's default texts: every game would show a different label in final-only mode
+  even when it does not want one. Rejected in favour of an optional key with fallback to `count`.
 
 ## Consequences
 
 - White Tally's practice mode is a one-line choice in its screen (`_count_mode`), with the same save and replay code
-  as the daily puzzle.
+  as the daily puzzle, plus an optional label text.
 - A server verifying a result needs the puzzle, the record and the mode; it re-derives the count by replay.
 - The shared screen shows `count()`; the hint before the first move uses `moves_made`, so a final-only attempt that is
   back at zero after undo does not show the start hint again.

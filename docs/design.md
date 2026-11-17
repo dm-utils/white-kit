@@ -34,7 +34,7 @@ Out of scope: game rules, solvers, generators, board drawing, sound, statistics,
 | A4 | All repositories are public on GitHub; the kit is fetched over HTTPS without credentials. | Private repositories need a deploy key or token in CI. |
 | A5 | The kit is always installed at `res://addons/white_kit/` (fixed path). | Kit tests and the CI template refer to this path. |
 | A6 | Godot's editor file scan skips every folder that contains a `project.godot` (nested project) and every folder with a `.gdignore`. The kit repository therefore has no `project.godot` at its root. | Verified by the developer in step 1 of section 10; if wrong, the kit host project moves outside the repository. |
-| A7 | White Tally's moves can be written as fixed-width tokens of upper-case letters and digits (for example cell plus direction). | The record grammar (section 6.1) gets a separator; a major version. |
+| A7 | White Tally's moves can be written as fixed-width tokens of upper-case letters and digits (for example cell plus direction). Confirmed by White Tally's design. | The record grammar (section 6.1) gets a separator; a major version. |
 | A8 | Puzzles shown by the shared screen are dictionaries with at least an integer `par`. | Games without par set `par` to their reference score. |
 
 ## 3. Scope: what is in the kit
@@ -72,9 +72,11 @@ The repository root is the addon root. A game includes the repository as a git s
 (ADR 0001). There is no `plugin.cfg`: the kit has no editor plugin; its global classes (`class_name`) are available as
 soon as the folder is in the project.
 
+There is no licence file: the code is public to read but all rights are reserved. The README says so.
+
 ```
 white-kit/                     (= res://addons/white_kit/ in a game)
-  README.md  VERSION  CHANGELOG.md  LICENSE
+  README.md  VERSION  CHANGELOG.md
   core/
     kit.gd              WhiteKit           version constant
     daily.gd            WhiteDaily
@@ -96,6 +98,7 @@ white-kit/                     (= res://addons/white_kit/ in a game)
     kit_host.sh         creates the local host project and runs the kit tests
     reference/white_rng.py   independent Python reference of WhiteSeed and WhiteRng
   tests/
+    test_runner.gd      WhiteTestRunner    (the only class_name under tests/)
     run_kit_tests.tscn, run_kit_tests.gd   (extends WhiteTestRunner)
     test_*.gd           test suites (no class_name)
     fixtures/           test-only scripts and data, loaded with preload (no class_name)
@@ -113,7 +116,8 @@ Rules for this layout:
 - `core/` contains no scenes, no nodes, no input and no rendering. Only `WhiteProgress` touches `user://`, and only the
   path it is given.
 - `ui/` may use everything; it depends on `core/`, never the other way round.
-- Test and fixture scripts never declare a `class_name` (they would become global classes in every game).
+- Test and fixture scripts never declare a `class_name` (they would become global classes in every game), except
+  `WhiteTestRunner`.
 - `docs/`, `ci/` and `templates/` contain a `.gdignore` so Godot does not scan them.
 - Fixture data uses the extension `.json` but lives under `tests/`, which every game excludes from its export
   (section 10, step 1).
@@ -411,7 +415,7 @@ empty structure; `write` followed by `read` round-trips a valid structure. Kit t
 ### 5.9 WhiteText (`core/text.gd`)
 
 Language choice and text lookup. The kit ships default texts for the shared screen; a game registers its own table,
-which overrides keys per language.
+which overrides keys per language and may add keys.
 
 ```gdscript
 class_name WhiteText
@@ -419,14 +423,16 @@ const BASE := {"nl": {...}, "en": {...}}           # kit default texts; keys in 
 static var lang := "nl"
 static func register(table: Dictionary) -> void    # merged = BASE overridden per language by table; replaces earlier registrations
 static func t(key: String) -> Variant              # merged[lang][key]; unknown key: push_error and return the key
+static func has_key(key: String) -> bool           # key exists in merged[lang]; no error output
 static func languages() -> PackedStringArray       # languages of the merged table, "nl" first
 static func has_lang(code: String) -> bool
 static func next_lang() -> String                  # the language after `lang` in languages(), wrapping
 ```
 
 Acceptance: `BASE["nl"].keys() == BASE["en"].keys()`; after `register` a game key overrides a base key in both
-languages and the base keys the game does not define remain; `next_lang()` alternates between `nl` and `en`; `t` of an
-unknown key returns the key.
+languages, a new game key is found by `has_key`, and the base keys the game does not define remain; `has_key` of an
+unknown key is false without error output; `next_lang()` alternates between `nl` and `en`; `t` of an unknown key
+returns the key.
 
 ### 5.10 WhiteFormat (`core/format.gd`)
 
@@ -480,7 +486,7 @@ static func button(text: String, action: Callable) -> Button   # exactly White S
 
 `class_name WhiteDayScreen extends Control`. The whole daily/practice screen of White Shift, with the game-specific
 parts as hooks (ADR 0004). A game's main scene script extends it. Behaviour reference: White Shift `ui/main.gd` as of
-commit ce16f44; the base class must reproduce it exactly.
+commit ce16f44; the base class must reproduce it exactly when the hooks keep their defaults.
 
 Members (names kept from White Shift, whose tests use them):
 
@@ -537,6 +543,7 @@ Hooks (override in the game; defaults in brackets):
 | `_view_update(a: WhiteAttempt) -> void` | Show the new state after a move, undo or restart. [no-op] |
 | `_extra_buttons() -> Array[Button]` | Buttons placed after Restart and shown only when solved (White Shift: Best route). [[]] |
 | `_hint_text() -> String` | Message before the first move. [`t("hint")`] |
+| `_play_message(a: WhiteAttempt) -> String` | Message line while the attempt is not solved; a non-empty result replaces the standard text (White Tally: "no move left"). [`""`] |
 | `_key_move(event: InputEventKey) -> Variant` | The move for a key press, or null. [null] |
 | `_on_debug_extra() -> void` | Extra debug action after `--keys` (White Shift: `--best`). [no-op] |
 
@@ -566,11 +573,17 @@ Flow (same as White Shift):
   `t("today") % WhiteDaily.number(date, _first_day())`); mode button `t("daily")` in practice, else `t("practice")`;
   language button `t("lang")`; button texts; tab text `t("levels")[i]` plus `" · %d" % count` when that level is solved,
   and the tab of the current level pressed. Without puzzles: empty counter, par and clock, message `t("no_puzzle")`,
-  all action buttons hidden. Otherwise counter `t("count") % a.count()`, par `t("par") % p.par`, clock; Undo and Restart
-  visible while not solved and disabled when `history` is empty; extra buttons visible when solved; Share visible when
-  solved and not practice; Next visible when solved and (practice or level < last level). Message: solved ->
-  `t("solved") % [count, par, clock]`, plus two spaces and `t("perfect")` when count equals par; no move made yet
-  (`a.moves_made == 0`) -> `_hint_text()`; else empty.
+  all action buttons hidden. Otherwise:
+  - Counter: `t(key) % a.count()`, where `key` is `"count_final"` when `a.mode == FINAL_ONLY` and
+    `WhiteText.has_key("count_final")`, else `"count"`. `count_final` is optional and not part of `WhiteText.BASE`; a
+    game that wants a different label in final-only mode defines it in its own table (for example "Zetten in je
+    oplossing: %d").
+  - Par `t("par") % p.par`; clock.
+  - Undo and Restart visible while not solved and disabled when `history` is empty; extra buttons visible when solved;
+    Share visible when solved and not practice; Next visible when solved and (practice or level < last level).
+  - Message, first match wins: solved -> `t("solved") % [count, par, clock]`, plus two spaces and `t("perfect")` when
+    count equals par; `_play_message(a)` is not empty -> that text; no move made yet (`a.moves_made == 0`) ->
+    `_hint_text()`; else empty.
 - `_on_move(move)`: ignored without puzzles or while `_replaying`; `attempt.play(move)`; when effective: start the clock
   if stopped, `_view_update(a)`; when solved stop the clock and emit `attempt_solved(level, a.count())`; `_store()`;
   `_refresh()`.
@@ -599,16 +612,23 @@ language: `EN` in Dutch, `NL` in English). Dutch defaults use "zetten"/"Zetten",
 values are White Shift's current generic texts (Makkelijk/Middel/Moeilijk, Dagpuzzel #%d, Oefenen, Vandaag, Terug,
 Opnieuw, Volgende, Precies par!, Deel uitslag, Gekopieerd, and their English equivalents). The default `share_line`
 is `"White #%d · %s zetten (par %s)"` / `"White #%d · %s moves (par %s)"`; every game overrides it with its own name.
+Optional key read by the screen when a game defines it: `count_final` (`%d`).
 
 Acceptance:
 - Kit test with the fixture game (section 5.13): open a day, play, undo, solve, reload from the written file (same
   state, opens on the first unsolved level), practice is not saved, a no-puzzle day shows `t("no_puzzle")` and survives
   input, a `FINAL_ONLY` practice shows the line length in the counter, the language toggle alternates and is saved.
+- `count_final`: without the key, a `FINAL_ONLY` attempt uses the `count` text; with the key registered, it uses
+  `count_final`; an `EVERY_MOVE` attempt always uses `count`.
+- `_play_message`: with the default hook the message equals White Shift's (hint before the first move, empty after);
+  with a fixture override returning a fixed text while the state is 2, that text is shown at state 2 (also before any
+  move if the start state were 2), the solved message still wins after solving, and an empty result falls back to the
+  standard text.
 - White Shift's UI tests pass unchanged after its `main.gd` extends `WhiteDayScreen` (section 10, step 9).
 
-### 5.13 WhiteTestRunner and kit tests (`core/` is tested by `tests/`)
+### 5.13 WhiteTestRunner and kit tests
 
-`class_name WhiteTestRunner extends Node` (file `tests/test_runner.gd` is the only script under `tests/` with a
+`class_name WhiteTestRunner extends Node` (file `tests/test_runner.gd`, the only script under `tests/` with a
 `class_name`, because games extend it).
 
 ```gdscript
@@ -637,7 +657,8 @@ Fixture game (`tests/fixtures/`, no `class_name`, loaded with `preload`):
   multi-character records.
 - `fixture_screen.gd`: a `WhiteDayScreen` subclass with a plain `Control` as view, the counter rules, its own save path
   (`user://white_kit_test_progress.json`) and fixture puzzle files `daily.json` (two dates) and `practice.json`
-  (two sets), each puzzle `{"par": 3}`.
+  (two sets), each puzzle `{"par": 3}`. Variants for the `_play_message` and `count_final` tests are set through
+  member flags on the fixture.
 - `generator.gd`: a precompute subclass whose `_generate` returns `{"seed": "<hex of seed>", "level": level}`.
 
 ### 5.14 WhitePrecompute (`tools/precompute.gd`)
@@ -760,8 +781,10 @@ number of checks. Triggers, concurrency and permissions as in White Shift. Steps
 6. Export Web (release), upload artifact, Pages artifact and deploy on `develop` (not on pull requests) - White Shift's
    steps and Pages job.
 
-## 8. Versioning and release
+## 8. Branches, versioning and release
 
+- Branch model as in the games: `develop` is the working branch; `main` is protected and only updated through pull
+  requests; releases are tags on `main`.
 - Semantic versions `MAJOR.MINOR.PATCH` in `VERSION` and `WhiteKit.VERSION`; git tag `v<version>` on a commit on
   `main`. `CHANGELOG.md` has one section per version.
 - MAJOR: a breaking change to a public API, the record grammar, the progress format, or the output of `WhiteSeed` or
@@ -775,13 +798,17 @@ number of checks. Triggers, concurrency and permissions as in White Shift. Steps
 
 ## 9. What White Tally gets
 
-Only the API; the rules belong to White Tally's own design.
+Only the API; the rules belong to White Tally's own design. White Tally's architect has confirmed that this section
+covers its needs, including the two additions R1 and R2 below.
 
 - A `WhiteRules` subclass for its board: its own state type, `move_len()` and tokens for a swap of two neighbouring
   stones and a slide into an empty neighbouring cell; `apply` returns `null` for an illegal move (and for a move that
   changes nothing, if its rules say so).
 - Daily attempts in `EVERY_MOVE`, practice in `FINAL_ONLY`, through the screen hook
   `_count_mode(is_practice)` returning `FINAL_ONLY` when `is_practice`, else `EVERY_MOVE`. One record format for both.
+- R1: the hook `_play_message(a)` for its own message during play (for example when no move is left); empty means the
+  standard text.
+- R2: the optional text key `count_final` for the counter label in `FINAL_ONLY`, falling back to `count`.
 - `WhiteRng` and `WhiteSeed` for generation (on device or precomputed), with seed texts `white-tally|<date>|<level>`.
 - `WhitePuzzleStore` and `WhitePrecompute` (with merge) when its puzzles are precomputed.
 - `WhiteDayScreen` with its own board view, texts and share template; a game may override `_share()` when the
@@ -801,10 +828,10 @@ is tagged `v0.1.0` (kit CI green) before step 1.
 | 3 | `ShiftGenerator.seed_for(text)` returns `WhiteSeed.fnv1a64(text)`. | `sim/generator.gd` |
 | 4 | `ShiftPuzzles` keeps `DAILY`, `PRACTICE`, `_puzzle` and its public functions; they delegate to one lazily created `WhitePuzzleStore.new(DAILY, PRACTICE, _puzzle)`. | `sim/puzzles.gd` |
 | 5 | `ShiftBoard extends WhiteRules`: `start_state()` returns `start`; `apply(s, dir)` returns `null` when `swipe(s, dir) == s`, else the new state; `is_solved(s)` returns `is_won(s)`; `encode_move(dir)` returns `LETTERS[dir]`; `decode_move(t)` returns the index in `LETTERS`, or `null` when not found. `ShiftAttempt extends WhiteAttempt`: `var board: ShiftBoard`; `_init(b)` calls `super(b)` and sets `board`; `swipe(dir)` returns `play(dir)`; `var swipes: int` with a getter returning `count()`; `static func replay(b, rec) -> ShiftAttempt` creates an attempt and calls `apply_record(rec)`. | `sim/board.gd`, `sim/attempt.gd` |
-| 6 | `Strings` keeps `TEXT` with all current keys, except `swipes`, renamed to `count`; `static var lang` gets a getter and setter that read and write `WhiteText.lang`; `t(key)` reads `TEXT[WhiteText.lang][key]` (so it works without registration; the tests call it directly); `clock` calls `WhiteFormat.clock`; `share_line` calls `WhiteFormat.day_line(t("share_line"), number, swipes, pars)`. | `ui/strings.gd` |
+| 6 | `Strings` keeps `TEXT` with all current keys, except `swipes`, renamed to `count`; `static var lang` gets a getter and setter that read and write `WhiteText.lang`; `t(key)` reads `TEXT[WhiteText.lang][key]` (so it works without registration; the tests call it directly); `clock` calls `WhiteFormat.clock`; `share_line` calls `WhiteFormat.day_line(t("share_line"), number, swipes, pars)`. White Shift defines no `count_final`. | `ui/strings.gd` |
 | 7 | `run_tests.gd extends WhiteTestRunner`; its `_ready` becomes `_run`; `check` and the counters come from the base. The output line stays `tests: 177 passed, 0 failed`. | `tests/run_tests.gd` |
 | 8 | `build_puzzles.gd extends WhitePrecompute` with `_game_id()` = `"white-shift"` and `_generate` (calls `ShiftGenerator.generate`, returns `{board, par, solutions, path}` as now). Verify: `--from=2026-11-17 --days=3` and `--practice=2` give byte-identical files to the old tool (run the old tool from the commit before this step). `measure.gd` unchanged. New days are from now on merged with `--merge`. | `tools/build_puzzles.gd` |
-| 9 | `main.gd extends WhiteDayScreen` and implements the hooks: `_game_id`, `_game_title` (`"WHITE SHIFT"`), `_first_day` (`ShiftDaily.FIRST_DAY`), `_texts` (`Strings.TEXT`), `_load_day` (`ShiftPuzzles.day`), `_load_practice` (three `ShiftPuzzles.practice(i, level)`), `_practice_count`, `_new_attempt` (`ShiftAttempt.new(puzzle.board)`; count mode ignored, always every move), `_make_view` (a `BoardView` with `swiped` connected to `_on_swipe`), `_view_show` (`view.show_board`), `_view_clear` (`view.board = null`, redraw), `_view_update` (`view.set_state`), `_extra_buttons` (`[best_btn]`), `_hint_text` (`t("hint") + "\n" + t("rule_more")`), `_key_move` (arrows and WASD), `_on_debug_extra` (`--best`). It keeps `best_btn`, `_on_swipe(dir)` (calls `_on_move(dir)`), `_show_best` and `_on_swipe_all_best`. Everything else is removed from `main.gd`. `ui/main.tscn` unchanged. | `ui/main.gd` |
+| 9 | `main.gd extends WhiteDayScreen` and implements the hooks: `_game_id`, `_game_title` (`"WHITE SHIFT"`), `_first_day` (`ShiftDaily.FIRST_DAY`), `_texts` (`Strings.TEXT`), `_load_day` (`ShiftPuzzles.day`), `_load_practice` (three `ShiftPuzzles.practice(i, level)`), `_practice_count`, `_new_attempt` (`ShiftAttempt.new(puzzle.board)`; count mode ignored, always every move), `_make_view` (a `BoardView` with `swiped` connected to `_on_swipe`), `_view_show` (`view.show_board`), `_view_clear` (`view.board = null`, redraw), `_view_update` (`view.set_state`), `_extra_buttons` (`[best_btn]`), `_hint_text` (`t("hint") + "\n" + t("rule_more")`), `_key_move` (arrows and WASD), `_on_debug_extra` (`--best`). `_play_message` keeps its default. It keeps `best_btn`, `_on_swipe(dir)` (calls `_on_move(dir)`), `_show_best` and `_on_swipe_all_best`. Everything else is removed from `main.gd`. `ui/main.tscn` unchanged. | `ui/main.gd` |
 | 10 | Generator on `WhiteRng` (ADR 0002): `generate` uses `WhiteRng.new(seed_value)`; `random_board(rng: WhiteRng, cfg)` and `_free_cell(rng: WhiteRng, ...)`; `randi_range` -> `range_int`, `randf` -> `next_float`. Tests: in `test_fast_swipe_matches_reference` and `test_swipe_properties` only the generator construction (`WhiteRng.new(7)`, `WhiteRng.new(99)`) and `randi_range` -> `range_int` change; no assertion changes. Run `measure.gd -- --days=30` and log the fit rate per level. `data/` is not regenerated. | `sim/generator.gd`, `tests/run_tests.gd`, `tests/extra_tests.gd` |
 
 No file is deleted: `sim/daily.gd`, `sim/puzzles.gd`, `sim/attempt.gd` and `ui/strings.gd` stay as thin wrappers
@@ -846,9 +873,9 @@ Not designed now; the kit leaves these seams:
 1. `core/` classes with their tests; Python reference and vector comparison; `tools/kit_host.sh`; kit CI green.
 2. `ui/` classes with the fixture screen test.
 3. `tools/precompute.gd` with its tests; `ci/setup-godot`; `templates/ci.yml`.
-4. README (installation, update, local tests), `CHANGELOG.md` for `0.1.0`, `LICENSE` (choice pending); tag `v0.1.0` on
-   `main`.
+4. README (installation, update, local tests, "all rights reserved"), `CHANGELOG.md` for `0.1.0`; no licence file; tag
+   `v0.1.0` on `main`.
 5. White Shift migration (section 10).
 
 The kit is done when: kit CI is green on `main` and on the tag; every acceptance criterion in section 5 has a test;
-the acceptance of section 10 holds; White Tally's architect confirms that section 9 covers its moves and count modes.
+the acceptance of section 10 holds.

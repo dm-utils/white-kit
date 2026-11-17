@@ -20,6 +20,12 @@ are in `docs/adr/`.
 | `docs/` | Design, conventions, glossary, ADRs. Has a `.gdignore`. |
 | `build/` | Local output (host project). Ignored by git. |
 
+## Licence
+
+- There is no licence file: all rights are reserved, as stated in the README. Do not add a `LICENSE` file or licence
+  headers, and do not copy third-party code into the kit (published algorithms such as xoshiro128** and FNV-1a are
+  implemented from their specification).
+
 ## GDScript style
 
 - Godot style guide: tabs for indentation, `snake_case` for functions and variables, `PascalCase` for classes and
@@ -36,7 +42,8 @@ are in `docs/adr/`.
 - Documentation comments use `##` on the class and on public functions; ordinary comments use `#`. All comments and
   identifiers are in English.
 - The kit contains no game-specific code, names or texts. Default texts are generic and exist in Dutch and English with
-  the same keys.
+  the same keys. Optional keys that the screen reads only when a game defines them (`count_final`) are not in the
+  defaults.
 - Test and fixture scripts declare no `class_name`; they are loaded with `preload`. The single exception is
   `WhiteTestRunner` (`tests/test_runner.gd`), which games extend.
 - No credentials, keys or personal data in the repository.
@@ -72,17 +79,23 @@ tools/kit_host.sh            # creates build/host, imports, runs res://addons/wh
 - The runner prints `tests: N passed, M failed` and exits with code 1 on any failure; `--min-checks=N` makes it fail
   when fewer checks ran.
 - `check(ok, what)`: `what` describes the expected behaviour in plain words, so a failure message explains itself.
-- Every public function has at least one test; every acceptance criterion in the design has a test.
+- Every public function and every screen hook has at least one test; every acceptance criterion in the design has a
+  test.
 - Tests that write files use names under `user://` starting with `white_kit_test_` and delete them afterwards; they
   never touch `user://progress.json`, because the kit tests also run inside games.
 - Reference vectors: CI compares `tools/rng_vectors.gd` with `tools/reference/white_rng.py` line by line.
 
-## Releases
+## Branches and releases
 
+- `develop` is the working branch; `main` is protected and updated through pull requests only; CI runs on pushes to
+  both, on pull requests to `main` and on tags. This is the same model as the games.
 - Semantic versions in `VERSION` and `WhiteKit.VERSION` (always equal; a test checks this). `CHANGELOG.md` has a
   section per version, newest first, with breaking changes marked.
 - A release is a commit on `main` tagged `v<VERSION>`; CI on the tag checks that the tag matches `VERSION`.
 - Games pin a tag; their CI rejects any other submodule commit.
+- Branch names: `feature/<description>`, `fix/<description>`, `chore/<description>`.
+- Commit messages in English, imperative, short subject line.
+- CI must be green before merging to `main` and before tagging.
 
 ## Using the kit in a game
 
@@ -97,11 +110,3 @@ git add .gitmodules addons/white_kit
 - CI: copy `templates/ci.yml` to `.github/workflows/ci.yml`.
 - Update: `git -C addons/white_kit fetch --tags && git -C addons/white_kit checkout v<new>`, run the game tests, commit
   `chore: update White Kit to v<new>`.
-
-## Git and CI
-
-- `develop` is the working branch; `main` is protected and updated through pull requests only; CI runs on pushes to
-  both, on pull requests to `main` and on tags.
-- Branch names: `feature/<description>`, `fix/<description>`, `chore/<description>`.
-- Commit messages in English, imperative, short subject line.
-- CI must be green before merging to `main` and before tagging.
