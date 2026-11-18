@@ -76,15 +76,16 @@ Alternatives:
 
 Consequences: no behaviour change for games that ignore the signal; White Shift uses it for Best route.
 
-## Amendment 2 (2026-11-17, planned for 0.2.0): practice-only screen, hook `_practice_only()`
+## Amendment 2 (2026-11-17, built in 0.2.0): practice-only screen, hook `_practice_only()`
 
 Context: White Tally's phase 1 has no daily puzzles, only practice sets (White Tally design, section 7.1 R3). With the
 0.1.0 screen it would open on a "no puzzle" day and show a mode button that leads nowhere. Its interim solution
 overrides `_open_day()` and `_refresh()`, both internal.
 
 Decision: a hook `_practice_only() -> bool` (default false). When true, the screen opens practice instead of the day,
-hides the mode button and ignores `_toggle_mode()`; everything else is practice behaviour. Specification and acceptance:
-design section 13.1.
+hides the mode button and ignores `_toggle_mode()`; everything else is practice behaviour. The first practice set is
+the random one the screen already picks at start-up; only the debug argument `--practice` forces set 0. Specification
+and acceptance: design section 13.1.
 
 Alternatives:
 - Name it `_start_in_practice()` (White Tally's suggestion): describes only the start, while the hook also hides the
@@ -94,6 +95,10 @@ Alternatives:
   button" has no requester. Rejected (YAGNI).
 - Keep White Tally's interim overrides of `_open_day()` and `_refresh()`: no kit change, but the game then depends on
   internal functions whose content may change in any kit version. Rejected.
+- Always open set 0 in practice-only mode: deterministic, but every player would start on the same set every visit,
+  and the normal screen already starts practice on a random set. Rejected; `--practice` covers the deterministic case
+  (screenshots, tests).
 
-Consequences: a MINOR version (0.2.0). White Shift is unaffected (default false). White Tally removes its interim
-overrides when it updates to 0.2.0. When White Tally gets daily puzzles in phase 2 it returns false from the hook.
+Consequences: a MINOR version (0.2.0). White Shift is unaffected (default false; verified on 0.2.0). White Tally
+removes its interim overrides when it updates to 0.2.0. When White Tally gets daily puzzles in phase 2 it returns false
+from the hook. The hook is read on every refresh, so the mode button returns as soon as the hook returns false.

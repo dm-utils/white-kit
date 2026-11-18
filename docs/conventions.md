@@ -48,8 +48,12 @@ are in `docs/adr/`.
 - Kit code compiles without warnings under Godot's default warning settings (the host project uses the defaults).
   Intended integer divisions carry `@warning_ignore("integer_division")`.
 - Kit code produces no engine error output on expected input, including invalid user input that it rejects (for
-  example `WhiteDaily.is_date` checks the date parts before calling `Time`). `push_error` is only for programming
-  errors (an unimplemented hook, an impossible range).
+  example `WhiteDaily` checks the date parts itself before calling `Time`). `push_error` is only for programming
+  errors: an unimplemented hook, an impossible `range_int` range, an invalid date passed to `WhiteDaily.number` or
+  `add_days`.
+- A public function that rejects invalid input returns a defined value together with its `push_error` (ADR 0006): the
+  first argument (`range_int`), 0 (`number`) or the input unchanged (`add_days`). When that value is also a valid
+  result, the documentation says so and names the check a caller uses first (`WhiteDaily.is_date`).
 - Documentation comments use `##` on the class and on public functions; ordinary comments use `#`. All comments and
   identifiers are in English.
 - The kit contains no game-specific code, names or texts. Default texts are generic and exist in Dutch and English with
@@ -65,7 +69,7 @@ are in `docs/adr/`.
   `randomize`, `seed`); CI greps for them. Reproducible randomness comes only from `WhiteRng`.
 - In `WhiteSeed` and `WhiteRng`, every intermediate value stays within int64 without overflow: 32-bit words are kept
   non-negative and masked with `0xFFFFFFFF`; 32 x 32-bit products are split into 16-bit halves; no left shift may reach
-  the sign bit.
+  the sign bit. Arguments from the caller that could overflow (a `range_int` span) are checked first.
 - The output of `WhiteSeed` and `WhiteRng` for a given seed is frozen. Changing it is a MAJOR version, and the reference
   vectors in `tests/test_rng.gd` and `tools/reference/white_rng.py` change in the same commit.
 - Rules code (in games) is deterministic and integer-based; the kit never compares states itself.
@@ -89,16 +93,22 @@ are in `docs/adr/`.
 tools/kit_host.sh            # creates build/host, imports, runs res://addons/white_kit/tests/run_kit_tests.tscn
 ```
 
-- The runner prints `tests: N passed, M failed` and exits with code 1 on any failure; `--min-checks=N` makes it fail
-  when fewer checks ran. Kit CI and the game template use `--min-checks=250` for the kit tests; raise it when checks
-  are added.
-- In 0.1.0 a GDScript runtime error inside a test silently skips the rest of that test function; from 0.2.0 the runner
-  counts it as a failure (ADR 0005). Until then, read the test output for `SCRIPT ERROR` lines.
+- The runner prints `tests: N passed, M failed` and exits with code 1 on any failure. `--min-checks=N` makes it fail
+  when fewer checks ran; a value that is not a non-negative integer fails the run before any test runs.
+- Thresholds: kit CI (`.github/workflows/ci.yml`) and the game template (`templates/ci.yml`) use `--min-checks=522`,
+  the check count of tag `v0.2.0`. A commit that adds kit checks raises the kit CI threshold to the new count in the
+  same commit; the template follows at the next tag, because a game runs the kit tests of the tag it pins. The
+  threshold is only lowered when checks are removed on purpose, with a changelog note. Check counts per moment:
+  design 13.4.
+- A GDScript runtime error or parse error during a run counts as a failed check (`FAIL: script error: ...`, ADR 0005);
+  `push_error` does not. A test may therefore call kit functions that `push_error` on purpose, and a script error in a
+  test is a finding, never something to work around in the runner.
 - `check(ok, what)`: `what` describes the expected behaviour in plain words, so a failure message explains itself.
 - Every public function and every screen hook and signal has at least one test; every acceptance criterion in the
   design has a test.
-- Behaviour that depends on a process exit code or on command-line output (the precompute tool, the runner itself) is
-  tested in a child Godot process (`OS.execute(OS.get_executable_path(), ...)`), not by calling `quit`.
+- Behaviour that depends on a process exit code or on command-line output (the precompute tool, the runner itself,
+  engine output of rejected input) is tested in a child Godot process (`OS.execute(OS.get_executable_path(), ...)`),
+  not by calling `quit`.
 - Tests that write files use names under `user://` starting with `white_kit_test_` and delete them afterwards; they
   never touch `user://progress.json`, because the kit tests also run inside games.
 - Reference vectors: CI compares `tools/rng_vectors.gd` with `tools/reference/white_rng.py` line by line.
@@ -110,8 +120,8 @@ tools/kit_host.sh            # creates build/host, imports, runs res://addons/wh
 - Semantic versions in `VERSION` and `WhiteKit.VERSION` (always equal; a test checks this). `CHANGELOG.md` has a
   section per version, newest first, with breaking changes marked. A new hook or signal is a MINOR version.
 - A release is tagged `v<VERSION>` on the commit merged to `main`; CI on the tag checks that the tag matches
-  `VERSION`. `v0.1.0` sits on a `develop` commit; the first pull request to `main` is therefore a merge commit (no
-  squash, no rebase). Tags are never moved.
+  `VERSION`. `v0.1.0` and `v0.2.0` sit on `develop` commits; the pull request that brings them to `main` is therefore a
+  merge commit (no squash, no rebase). Tags are never moved.
 - Games pin a tag; their CI rejects any other submodule commit.
 - Branch names: `feature/<description>`, `fix/<description>`, `chore/<description>`.
 - Commit messages in English, imperative, short subject line.
@@ -121,12 +131,13 @@ tools/kit_host.sh            # creates build/host, imports, runs res://addons/wh
 
 ```bash
 git submodule add https://github.com/dm-utils/white-kit.git addons/white_kit
-git -C addons/white_kit checkout v0.1.0
+git -C addons/white_kit checkout v0.2.0
 git add .gitmodules addons/white_kit
 ```
 
 - Clone a game with `git clone --recurse-submodules`, or run `git submodule update --init` after a plain clone.
 - Export preset: add `addons/white_kit/tests/*,addons/white_kit/tools/*` to `exclude_filter`.
-- CI: copy `templates/ci.yml` to `.github/workflows/ci.yml`.
-- Update: `git -C addons/white_kit fetch --tags && git -C addons/white_kit checkout v<new>`, run the game tests, commit
-  `chore: update White Kit to v<new>`.
+- CI: copy `templates/ci.yml` to `.github/workflows/ci.yml` and set `MIN_CHECKS` to the game's own check count.
+- Update: `git -C addons/white_kit fetch --tags && git -C addons/white_kit checkout v<new>`, take the kit threshold
+  from the new `templates/ci.yml`, run the game tests, commit `chore: update White Kit to v<new>`.
+- Untrusted dates (arguments, files) are checked with `WhiteDaily.is_date` before `number` or `add_days`.

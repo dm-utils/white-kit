@@ -1,7 +1,7 @@
 # White Kit - design
 
-Status: version 0.1.0 built and tagged; White Shift migrated onto it (section 10). Next release: 0.2.0, planned
-(section 13).
+Status: version 0.2.0 built and tagged (section 13); version 0.1.0 built and tagged, White Shift migrated onto it
+(section 10) and updated to 0.2.0.
 Decisions with their trade-offs are in `docs/adr/`; terms are defined in `docs/glossary.md`; code and release rules
 are in `docs/conventions.md`.
 
@@ -38,7 +38,7 @@ Out of scope: game rules, solvers, generators, board drawing, sound, statistics,
 | A7 | White Tally's moves can be written as fixed-width tokens of upper-case letters and digits (for example cell plus direction). Confirmed by White Tally's design. | The record grammar (section 6.1) gets a separator; a major version. |
 | A8 | Puzzles shown by the shared screen are dictionaries with at least an integer `par`. | Games without par set `par` to their reference score. |
 | A9 | Puzzle data written by the precompute tool contains no whole-valued floats that must stay floats, and no integers of 2^53 or more (section 5.14). | A merge would rewrite such values; the game stores them as strings instead. |
-| A10 | Godot's `Logger` class (`OS.add_logger`, available since Godot 4.5) reports GDScript runtime errors with error type `ERROR_TYPE_SCRIPT` and `push_error` with `ERROR_TYPE_ERROR`. Basis of the test runner change in 0.2.0 (ADR 0005). | Verified by the acceptance test in section 13.2; if wrong, the developer reports it and the runner falls back to the alternative in ADR 0005. |
+| A10 | Godot's `Logger` class (`OS.add_logger`, available since Godot 4.5) reports GDScript runtime errors with error type `ERROR_TYPE_SCRIPT` and `push_error` with `ERROR_TYPE_ERROR`. Basis of the test runner in 0.2.0 (ADR 0005). | Verified in 0.2.0 by the fixtures `runner_script_error` and `runner_push_error` (section 13.2): a call on `null` is counted, `push_error` is not. |
 
 ## 3. Scope: what is in the kit
 
@@ -142,7 +142,7 @@ override.
 
 ```gdscript
 class_name WhiteKit
-const VERSION := "0.1.0"        # always equal to the VERSION file
+const VERSION := "0.2.0"        # always equal to the VERSION file
 const INSTALL_PATH := "res://addons/white_kit/"
 ```
 
@@ -158,30 +158,48 @@ class_name WhiteDaily
 static func nl_offset(unix: int) -> int            # 7200 from last Sunday of March 01:00 UTC to last Sunday of October 01:00 UTC, else 3600
 static func date_at(unix: int) -> String           # "YYYY-MM-DD" in the Netherlands
 static func today() -> String                      # date_at(system time)
-static func number(date: String, first_day: String) -> int   # first_day is #1; the day before is 0
-static func add_days(date: String, days: int) -> String      # calendar arithmetic via 12:00 UTC of the date
+static func number(date: String, first_day: String) -> int   # first_day is #1; the day before is 0; invalid input: push_error and 0
+static func add_days(date: String, days: int) -> String      # calendar arithmetic via 12:00 UTC; invalid date: push_error and date unchanged
 static func is_date(text: String) -> bool          # exactly "YYYY-MM-DD", a real calendar date, year 1970 or later
 ```
 
-The formulas are those of `sim/daily.gd` (copy, do not rewrite). `add_days` returns
+The formulas are those of `sim/daily.gd` (copy, do not rewrite). For a valid date, `add_days` returns
 `Time.get_date_string_from_unix_time(Time.get_unix_time_from_datetime_string(date + "T12:00:00") + days * 86400)`.
 
-`is_date(text)`, in this order, false at the first failing step:
+Date validity is one private function `_valid(text) -> bool`, false at the first failing step:
 
 1. `text` has length 10, characters 4 and 7 are `-`, all others are ASCII digits.
 2. Year, month and day parsed from the parts: year at least 1970, month 1 to 12, day 1 to the length of that month
    (February 29 days in a Gregorian leap year: divisible by 4 and not by 100, or divisible by 400).
-3. `add_days(text, 0) == text`.
 
-Step 2 exists because `Time.get_unix_time_from_datetime_string` prints an engine error for an impossible date
-(30 February, month 13); with step 2 first, `is_date` never produces engine output. The result is the same as the
-round-trip alone would give for every year from 1970 on.
+`_valid` never calls `Time`, so it never produces engine output. (`Time.get_unix_time_from_datetime_string` prints an
+engine error for an impossible date such as 30 February or month 13.)
+
+- `is_date(text)` returns `_valid(text)`. Since 0.2.0 it has no round trip through `add_days`: the 0.1.0 design had a
+  third step `add_days(text, 0) == text`, which gives the same answer as step 2 for every four-digit year from 1970 on
+  and is therefore dropped.
+- `number(date, first_day)`: when `_valid(date)` or `_valid(first_day)` is false: `push_error` naming both values and
+  return 0, without calling `Time`. Otherwise the 0.1.0 formula.
+- `add_days(date, days)`: when `_valid(date)` is false: `push_error` naming the value and return `date` unchanged,
+  without calling `Time`. Otherwise the formula above.
+
+0 is also a valid result of `number` (the day before the first day), and a returned `date` can equal a valid result
+(`days == 0`). The results for invalid input are therefore not a validity signal: the `push_error` marks a programming
+error, and a caller that handles untrusted text (a command-line argument, a file, later a server) checks it with
+`is_date` first. Decision and alternatives: ADR 0006.
+
+`WhiteDayScreen` does not validate its debug argument `--date`; an invalid value gives the subtitle `#0` with a
+`push_error` and no puzzles.
 
 Acceptance: all date checks of White Shift (`test_daily_dates`, `test_dates`) pass against `WhiteDaily` with
 `first_day = "2026-11-17"`; `add_days("2028-02-28", 1) == "2028-02-29"`; `add_days("2026-12-31", 1) == "2027-01-01"`;
 `is_date("2026-02-30") == false`; `is_date("2026-13-01") == false`; `is_date("2028-02-29") == true`;
-`is_date("2100-02-29") == false`; `is_date("2026-11-17") == true`; `is_date("2026-11-7") == false`; none of these
-calls produces engine error output.
+`is_date("2100-02-29") == false`; `is_date("2000-02-29") == true`; `is_date("2026-11-17") == true`;
+`is_date("2026-11-7") == false`; none of these calls produces engine error output. For each of `"garbage"`,
+`"2026-13-45"`, `""`, `"2026-02-30"`, `"1969-12-31"`, `"2026-1-1"`: `number(bad, "2026-11-17") == 0`,
+`number("2026-11-17", bad) == 0` and `add_days(bad, 3) == bad`, each with exactly one `push_error` and without engine
+error output. Valid input is unchanged: `number("2026-11-17", "2026-11-17") == 1`,
+`number("2026-11-16", "2026-11-17") == 0`, `add_days("2026-02-28", 1) == "2026-03-01"`.
 
 ### 5.3 WhiteSeed (`core/seed.gd`)
 
@@ -259,15 +277,18 @@ func reseed(seed_value: int) -> void
 func set_state(s0: int, s1: int, s2: int, s3: int) -> void   # raw state, masked to 32 bits; all zero: push_error, state unchanged
 func get_state() -> PackedInt64Array               # [s0, s1, s2, s3]
 func next_u32() -> int                             # 0 .. 2^32 - 1
-func range_int(from: int, to: int) -> int          # inclusive, unbiased
+func range_int(from: int, to: int) -> int          # inclusive, unbiased; bad range: push_error and from, no draw
 func next_float() -> float                         # next_u32() / 4294967296.0, in [0, 1), exact
 func pick(items: Array) -> Variant                 # items[range_int(0, size - 1)]; empty: null without drawing
 func shuffle(items: Array) -> void                 # in place
 ```
 
-- `range_int`: `n = to - from + 1`; `from > to` or `n > 2^32` is a `push_error` and returns `from` without drawing.
-  Otherwise `limit = 4294967296 - (4294967296 % n)`; draw `r = next_u32()` until `r < limit`; return `from + r % n`.
-  It always draws at least once, also when `n == 1`.
+- `range_int` (0.2.0): `span = to - from` (int64 subtraction, which wraps to a negative value when the true span exceeds
+  2^63 - 1). The range is bad when `from > to`, `span < 0` (overflow) or `span >= 2^32` (more than 2^32 values); a bad
+  range is a `push_error` and returns `from` without drawing, so the state is unchanged. Otherwise `n = span + 1`,
+  `limit = 4294967296 - (4294967296 % n)`; draw `r = next_u32()` until `r < limit`; return `from + r % n`. It always
+  draws at least once, also when `n == 1`. For every valid range the output is identical to 0.1.0. Decision and
+  alternatives: ADR 0006.
 - `shuffle`: Fisher-Yates from the end: for `i` from `size - 1` down to `1`: `j = range_int(0, i)`; swap items `i` and
   `j`.
 - Method names deliberately differ from `RandomNumberGenerator` and from the global functions (`randf`, `seed`), to
@@ -282,6 +303,10 @@ Acceptance:
   `tools/reference/white_rng.py` and compares their output line by line.
 - `range_int(3, 3)` returns 3 and advances the state; `range_int(0, 6)` over 70000 draws hits every value between 9000
   and 11000 times.
+- Bad ranges (with `MAX = 2^63 - 1`, `MIN = -2^63`): `range_int(0, MAX) == 0`, `range_int(MIN, 0) == MIN`,
+  `range_int(MIN, MAX) == MIN`, `range_int(-1, MAX) == -1`, `range_int(MAX - 2^32, MAX) == MAX - 2^32` (2^32 + 1
+  values), each returning at once, and the state is unchanged after them. The widest valid ranges at both ends,
+  `range_int(MAX - (2^32 - 1), MAX)` and `range_int(MIN, MIN + (2^32 - 1))`, return a value inside the range.
 - Two generators with the same seed give identical sequences; `shuffle` of the same array with the same seed gives the
   same order.
 - No kit file in `core/` or `tools/` (except `tools/reference/`) uses `RandomNumberGenerator`, `randi(`, `randf(` or
@@ -575,7 +600,7 @@ Hooks (override in the game; defaults in brackets):
 | `_play_message(a: WhiteAttempt) -> String` | Message line while the attempt is not solved; a non-empty result replaces the standard text (White Tally: "no move left"). [`""`] |
 | `_key_move(event: InputEventKey) -> Variant` | The move for a key press, or null. [null] |
 | `_on_debug_extra() -> void` | Extra debug action after `--keys` (White Shift: `--best`). [no-op] |
-| `_practice_only() -> bool` | From 0.2.0 (section 13.1): open practice instead of the day and hide the mode button. [false] |
+| `_practice_only() -> bool` | Since 0.2.0 (section 13.1): open practice instead of the day, hide the mode button and ignore `_toggle_mode()`. [false] |
 
 Flow (same as White Shift):
 
@@ -583,8 +608,9 @@ Flow (same as White Shift):
   (2) `WhiteText.register(_texts())`; (3) unless `--shot`: `_save = WhiteProgress.read(_save_path(),
   WhiteText.languages(), "nl")`; (4) `WhiteText.lang = _debug.lang` when given, else `_save.lang`; (5) build the screen;
   (6) `date = _debug.date` when given, else `WhiteDaily.today()`; (7) `practice_index = randi() % maxi(1,
-  _practice_count())`; (8) with `--practice`: `practice_index = 0` and open practice, else open the day; (9) with
-  `--shot`: run the debug shot. Subclasses do not override `_ready`.
+  _practice_count())`; (8) with `--practice`: `practice_index = 0` and open practice; else, when `_practice_only()`:
+  open practice with the random index of step 7; else open the day; (9) with `--shot`: run the debug shot. Subclasses
+  do not override `_ready`.
 - Build: background (`WhiteTheme.BG`, full rect); margin container (24 on every side); column with spacing 14: top row
   (title expanding, mode button, language button), subtitle, tab row (spacing 8, one toggle button per level,
   expanding), info row (counter left, par centred, clock right, each expanding), the view (expands vertically,
@@ -601,10 +627,11 @@ Flow (same as White Shift):
 - `_show_level()`: `_replaying = false`; `_view_clear()` without puzzles, else `_view_show(attempts[level])`;
   `_refresh()`; emit `level_shown`.
 - `_refresh()`: subtitle (practice: `t("practice") + " %d" % (practice_index + 1)`, else
-  `t("today") % WhiteDaily.number(date, _first_day())`); mode button `t("daily")` in practice, else `t("practice")`;
-  language button `t("lang")`; button texts; tab text `t("levels")[i]` plus `" · %d" % count` when that level is solved,
-  and the tab of the current level pressed. Without puzzles: empty counter, par and clock, message `t("no_puzzle")`,
-  all action buttons (Undo, Restart, extra, Share, Next) hidden, emit `refreshed`, done. Otherwise:
+  `t("today") % WhiteDaily.number(date, _first_day())`); mode button `t("daily")` in practice, else `t("practice")`,
+  and `mode_btn.visible = not _practice_only()`; language button `t("lang")`; button texts; tab text `t("levels")[i]`
+  plus `" · %d" % count` when that level is solved, and the tab of the current level pressed. Without puzzles: empty
+  counter, par and clock, message `t("no_puzzle")`, all action buttons (Undo, Restart, extra, Share, Next) hidden, emit
+  `refreshed`, done. Otherwise:
   - Counter: `t(key) % a.count()`, where `key` is `"count_final"` when `a.mode == FINAL_ONLY` and
     `WhiteText.has_key("count_final")`, else `"count"`. `count_final` is optional and not part of `WhiteText.BASE`; a
     game that wants a different label in final-only mode defines it in its own table (for example "Zetten in je
@@ -622,9 +649,9 @@ Flow (same as White Shift):
 - `_on_undo()`, `_on_restart()`: ignored while `_replaying` or without puzzles; on success `_view_update`, `_store`,
   `_refresh`.
 - `_pick_level(i)` (beyond the puzzles: only refresh; else stop the clock, store, switch, show), `_next()` (practice on
-  the last level: next practice set from level 0; else the next level), `_toggle_mode()`, `_toggle_lang()` (uses
-  `WhiteText.next_lang()`, stores the language in `_save` and writes the file unless `--shot`, then refreshes),
-  `_share()` (clipboard, message `line + "\n" + t("copied")`, line =
+  the last level: next practice set from level 0; else the next level), `_toggle_mode()` (returns at once when
+  `_practice_only()`), `_toggle_lang()` (uses `WhiteText.next_lang()`, stores the language in `_save` and writes the
+  file unless `--shot`, then refreshes), `_share()` (clipboard, message `line + "\n" + t("copied")`, line =
   `WhiteFormat.day_line(t("share_line"), number, counts, pars)` with `null` for unsolved levels), `_store()` (nothing
   in practice or with `--shot`; else one `WhiteProgress.entry` per level - the running level with its live clock -
   into `_save.days[date]`, `WhiteProgress.write`, emit `progress_saved`), `_elapsed()`, `_stop_clock()`, `_process()`
@@ -676,6 +703,7 @@ Acceptance:
   standard text.
 - `refreshed`: a handler connected on the fixture screen is called once per `_refresh()`, both with puzzles and on a
   no-puzzle day, and after a language toggle it sees the new `WhiteText.lang`.
+- `_practice_only`: section 13.1.
 - White Shift's UI tests pass unchanged after its `main.gd` extends `WhiteDayScreen` (section 10, step 9).
 
 ### 5.13 WhiteTestRunner and kit tests
@@ -690,24 +718,35 @@ func check(ok: bool, what: String) -> void   # counts; on failure printerr("FAIL
 func _run() -> void                          # override; may await
 ```
 
-`_ready` awaits `_run()`, prints `tests: <passed> passed, <failed> failed` and quits with exit code 1 when anything
-failed. Optional user argument `--min-checks=N`: when fewer than N checks ran, it also prints
-`FAIL: only <n> checks ran, expected at least <N>` and exits with 1 (guards against silently skipped tests).
+`_ready` (0.2.0), in this order:
 
-Known limitation in 0.1.0: a GDScript runtime error (for example a call on `null`) inside a test function aborts that
-function; the caller continues, so the checks after the error never run and nothing is counted as failed. The run can
-still end with exit code 0. `--min-checks` catches this only when enough checks are lost (kit CI: 250, White Shift:
-177). Version 0.2.0 counts every script error as a failure (section 13.2, ADR 0005).
+1. Optional user argument `--min-checks=N`. The value must be a non-negative integer (`String.is_valid_int()` and at
+   least 0); otherwise the runner prints `FAIL: bad --min-checks value '<value>'` and quits with exit code 1 before
+   `_run()` is called. A bare `--min-checks` without `=` is ignored; when the argument is repeated, the last one
+   counts.
+2. Register the script error logger (section 13.2), await `_run()`, remove the logger.
+3. Every collected script error: `failed += 1` and `printerr("FAIL: script error: <file>:<line> <message>")`.
+4. When `passed + failed < N`: print `FAIL: only <n> checks ran, expected at least <N>`.
+5. Print `tests: <passed> passed, <failed> failed`; quit with exit code 1 when `failed > 0` or step 4 failed, else 0.
+
+A GDScript runtime error (for example a call on `null`) inside a test function still aborts that function, and the
+checks after it never run, but the run now fails with the file and line of the error (ADR 0005). This also holds after
+an `await` and for several errors in one run (each counts once). A parse error in a script that a test compiles at run
+time is reported the same way and also fails the run. `push_error` does not count, so tests may call kit functions
+that `push_error` on purpose. `--min-checks` stays as a second guard: it catches a suite that is not called at all.
+In 0.1.0 the runner did not count script errors and relied on `--min-checks` alone.
 
 Because games exclude `addons/white_kit/tests/*` from their export, `WhiteTestRunner` is never exported; it must
 therefore not be referenced from game code outside `tests/`.
 
 Kit tests: `tests/run_kit_tests.tscn` (root `Node` with `run_kit_tests.gd`, which extends `WhiteTestRunner`) runs the
 suites `test_kit.gd`, `test_daily.gd`, `test_seed.gd`, `test_rng.gd`, `test_puzzle_store.gd`, `test_attempt.gd`,
-`test_progress.gd`, `test_text_format.gd`, `test_day_screen.gd` and `test_precompute.gd`, loaded by path; a suite that
-does not load is a failed check `suite loads: <path>`. Each suite has
-`func run(check: Callable, node: Node) -> void` (may await), like White Shift's `extra_tests.gd`. Version 0.1.0 has 258
-checks; the kit CI and the game template run the kit tests with `--min-checks=250`.
+`test_progress.gd`, `test_text_format.gd`, `test_day_screen.gd`, `test_precompute.gd`, `test_independent.gd`,
+`test_edge.gd`, `test_precompute_edge.gd`, `test_release_020.gd` and (after the tag, section 13.4)
+`test_retest_020.gd`, loaded by path; a suite that does not load is a failed check `suite loads: <path>`. Each suite
+has `func run(check: Callable, node: Node) -> void` (may await), like White Shift's `extra_tests.gd`. The tag
+`v0.2.0` has 522 checks and the kit CI and the game template run the kit tests with `--min-checks=522`; check counts
+per moment are in section 13.4.
 
 Fixture game (`tests/fixtures/`, no `class_name`, loaded with `preload`):
 - `counter_rules.gd`: state is an int starting at 0; move `"U"` (+1) and `"D"` (-1, rejected at 0); solved at 3;
@@ -716,15 +755,20 @@ Fixture game (`tests/fixtures/`, no `class_name`, loaded with `preload`):
   multi-character records.
 - `fixture_screen.gd`: a `WhiteDayScreen` subclass with a plain `Control` as view, the counter rules, its own save path
   (`user://white_kit_test_progress.json`) and fixture puzzle files `daily.json` (two dates) and `practice.json`
-  (two sets), each puzzle `{"par": 3}`. Variants for the `_play_message` and `count_final` tests are set through
-  member flags on the fixture.
+  (two sets), each puzzle `{"par": 3}`. Variants for the `_play_message`, `count_final` and `_practice_only` tests are
+  set through member flags on the fixture (`practice_only` for the last).
 - `generator.gd`: a `WhitePrecompute` subclass with game id `white-fixture` whose `_generate` returns
   `{"seed": "<hex of seed>", "level": level, "par": level + 1}`, so the default `_summary` is exercised.
+- Runner fixtures (`.tscn` plus `.gd`, each a root `Node` whose script extends `WhiteTestRunner`): `runner_script_error`,
+  `runner_push_error` and `runner_parse_error` (section 13.2); `runner_await_error` and `runner_invalid_dates` (added
+  by the 0.2.0 test round: a script error after an `await`, and invalid dates through `WhiteDaily` in a separate
+  process so its engine output can be inspected).
 
 `test_precompute.gd` runs the fixture generator as a child Godot process:
 `OS.execute(OS.get_executable_path(), ["--headless", "--path", <globalized res://>, "-s", <generator>, "--", ...args],
 output, true)`, so exit codes and printed lines are the real ones of a command-line run. Its files are under `user://`
-with the prefix `white_kit_test_`. This works unchanged inside a game, where the kit tests also run.
+with the prefix `white_kit_test_`. This works unchanged inside a game, where the kit tests also run. The runner
+fixtures are run the same way, as scenes instead of `-s` scripts.
 
 ### 5.14 WhitePrecompute (`tools/precompute.gd`)
 
@@ -777,7 +821,8 @@ Commands (user arguments after `--`):
     not touched.
   - Finally print `merged: <added> added, <skipped> unchanged` and return 0.
 - Invalid arguments (`--from` not a date, missing or empty `--out`/`--into`, `--days` or `--practice` below 1, no
-  command) print the usage line to stderr and return 1.
+  command) print the usage line to stderr and return 1. `--from` is checked with `WhiteDaily.is_date` before any date
+  arithmetic.
 - A game script only overrides hooks.
 
 Acceptance: build with the fixture generator gives the expected keys and the expected seeds; merge adds new keys, skips
@@ -839,7 +884,7 @@ Triggers: pushes to `develop` and `main`, pull requests to `main`, tags `v*`, ma
 
 1. Checkout to `host/addons/white_kit`; copy the host template to `host/project.godot`.
 2. `uses: ./host/addons/white_kit/ci/setup-godot` (section 7.3).
-3. Import the host project; run the kit tests with `--min-checks=250`.
+3. Import the host project; run the kit tests with `--min-checks=522` (section 13.4).
 4. Reference vectors: run `tools/rng_vectors.gd` in the host and `python3 -I tools/reference/white_rng.py`; `diff`
    their outputs.
 5. Determinism grep (section 5.4).
@@ -856,7 +901,7 @@ moved.
 ### 7.4 Game workflow template (`templates/ci.yml`)
 
 A game copies this file to `.github/workflows/ci.yml` and adapts the header comment (play domain) and the minimum
-number of checks. Triggers, concurrency and permissions as in White Shift. Steps:
+number of checks of its own tests (`MIN_CHECKS`). Triggers, concurrency and permissions as in White Shift. Steps:
 
 1. `actions/checkout` with `submodules: true`.
 2. Kit pin check: `v=$(cat addons/white_kit/VERSION)`;
@@ -864,11 +909,13 @@ number of checks. Triggers, concurrency and permissions as in White Shift. Steps
    `git -C addons/white_kit rev-parse "v$v^{commit}"` equals `git -C addons/white_kit rev-parse HEAD`. Write
    `White Kit v<version>` to the step summary.
 3. `uses: ./addons/white_kit/ci/setup-godot`.
-4. Import; kit tests (`res://addons/white_kit/tests/run_kit_tests.tscn` with `-- --min-checks=250`); game tests
-   (`res://tests/run_tests.tscn` with `-- --min-checks=<N>`).
+4. Import; kit tests (`res://addons/white_kit/tests/run_kit_tests.tscn` with `-- --min-checks=522`, the kit's check
+   count at the pinned tag); game tests (`res://tests/run_tests.tscn` with `-- --min-checks=<N>`).
 5. Puzzles left (only when `data/daily.json` exists): days from today on, warning below 14 - White Shift's step.
 6. Export Web (release), upload artifact, Pages artifact and deploy on `develop` (not on pull requests) - White Shift's
    steps and Pages job.
+
+When a game updates the kit, it takes the kit threshold from the template of the new version (the changelog names it).
 
 ## 8. Branches, versioning and release
 
@@ -876,14 +923,17 @@ number of checks. Triggers, concurrency and permissions as in White Shift. Steps
   requests; releases are tags.
 - Semantic versions `MAJOR.MINOR.PATCH` in `VERSION` and `WhiteKit.VERSION`; git tag `v<version>`. `CHANGELOG.md` has
   one section per version.
-- A release tag is set on the commit that is merged to `main`. Exception: `v0.1.0` was tagged on `develop` before the
-  first pull request to `main`, so White Shift could be migrated; that pull request must be a merge (not a squash or
-  rebase), so the tagged commit becomes part of `main`. Tags are never moved or deleted once a game pins them.
+- A release tag is set on the commit that is merged to `main`. Exception: `v0.1.0` and `v0.2.0` were tagged on
+  `develop` before a pull request to `main` (`v0.1.0` so White Shift could be migrated, `v0.2.0` so White Shift and
+  White Tally could update without waiting for the first merge to `main`). The pull request that brings them to `main`
+  must be a merge (not a squash or rebase), so the tagged commits become part of `main`. Tags are never moved or
+  deleted once a game pins them.
 - MAJOR: a breaking change to a public API, the record grammar, the progress format, or the output of `WhiteSeed` or
   `WhiteRng` for a given seed. MINOR: new API (including a new hook or signal), backward compatible. PATCH: fixes
   without API change. While the version is 0.x a MINOR may break; the changelog then says so explicitly.
 - The output of `WhiteSeed` and `WhiteRng` is frozen: changing it is always MAJOR (also in 0.x), and the reference
-  vectors in the tests may only change together with such a bump.
+  vectors in the tests may only change together with such a bump. Defining the result of an input that had no usable
+  result before (such as a `range_int` span beyond int64 in 0.2.0) is not a change of output.
 - Games pin a tagged release; the CI check in 7.4 enforces it. Updating a game: `git -C addons/white_kit fetch --tags`,
   `git -C addons/white_kit checkout v<new>`, `git add addons/white_kit`, run the game's tests, commit
   `chore: update White Kit to v<new>`.
@@ -901,9 +951,9 @@ covers its needs, including the additions R1, R2 and R3 below.
 - R1 (0.1.0): the hook `_play_message(a)` for its own message during play (for example when no move is left); empty
   means the standard text.
 - R2 (0.1.0): the optional text key `count_final` for the counter label in `FINAL_ONLY`, falling back to `count`.
-- R3 (planned, 0.2.0): the hook `_practice_only()` to open directly in practice and hide the mode button, for White
-  Tally's phase 1, which has no daily puzzles (section 13.1). Until then White Tally uses the interim overrides in its
-  own design (section 7.1 there) and removes them when it updates to 0.2.0.
+- R3 (0.2.0, built): the hook `_practice_only()` to open directly in practice and hide the mode button, for White
+  Tally's phase 1, which has no daily puzzles (section 13.1). White Tally removes the interim overrides of its own
+  design (section 7.1 there) when it updates to `v0.2.0`.
 - The signal `refreshed()` for texts of its own extra buttons (for example Best route).
 - `WhiteRng` and `WhiteSeed` for generation (on device or precomputed), with seed texts `white-tally|<date>|<level>`.
 - `WhitePuzzleStore` and `WhitePrecompute` (with merge) when its puzzles are precomputed.
@@ -913,7 +963,8 @@ covers its needs, including the additions R1, R2 and R3 below.
 
 ## 10. Migration plan for White Shift
 
-Status: done (2026-11-17). White Shift `develop` at 530b879 pins `v0.1.0`; CI green including the Pages deploy.
+Status: done (2026-11-17). White Shift `develop` at 530b879 pinned `v0.1.0`; CI green including the Pages deploy.
+White Shift has since been updated to `v0.2.0` (section 13).
 
 Requirements: no change in behaviour, identical puzzles (data files byte-identical), all existing 177 checks green
 after every step. One commit per step on a `chore/white-kit` branch in White Shift; tests run after every step. The kit
@@ -977,14 +1028,23 @@ Not designed now; the kit leaves these seams:
 5. White Shift migration (section 10).
 
 The kit is done when: kit CI is green on `main` and on the tag; every acceptance criterion in section 5 has a test;
-the acceptance of section 10 holds. Open for 0.1.0: the pull request `develop` -> `main` (merge commit, section 8)
-and kit CI green on `main`.
+the acceptance of section 10 holds. Still open: the pull request `develop` -> `main` (merge commit, section 8), which
+now also brings `v0.2.0`, and kit CI green on `main` (section 13.6).
 
-## 13. Next release: 0.2.0 (planned)
+## 13. Release 0.2.0 (built)
 
-Two additions, both backward compatible. A new hook is new API, so the version is MINOR: `0.2.0` (section 8).
-White Shift needs no code change for either and updates by the procedure in section 8; its 177 checks must stay green
-and its screenshots pixel-identical.
+Status: built 2026-11-17 and tagged `v0.2.0` on `develop` (commit 0a58b2e); kit CI green on the branch and on the tag;
+`tests: 522 passed, 0 failed` at the tag. Retested: all criteria below met, no blocking or high findings. A new hook is
+new API, so the version is MINOR (section 8). Everything is backward compatible for valid input; the only behaviour
+changes are for input that 0.1.0 handled badly (section 13.3 and the `--min-checks` check in 13.2).
+
+The release holds White Tally's request R3 and the fixes for the test findings on 0.1.0: B1 (runner did not count
+script errors), B2 (`range_int` overflow), B3 (`WhiteDaily.number` and `add_days` on an invalid date) and B7 (check
+thresholds far below the real count).
+
+White Shift needed no code change. It pins `v0.2.0` on its `develop` (f540f2a): its 192 checks are green under the new
+runner (`MIN_CHECKS` 192), the kit tests inside it give 522 passed, and `data/`, `ui/`, `sim/` and `tools/` are
+unchanged against 530b879.
 
 ### 13.1 R3: practice-only screen (`_practice_only`)
 
@@ -997,71 +1057,136 @@ func _practice_only() -> bool      # hook on WhiteDayScreen; default false
 
 When the hook returns true:
 
-- `_ready` step 8 always opens practice: `practice_index = 0` with `--practice`, else the random index of step 7, then
-  `_open_practice()`. `_open_day()` is not called. Steps 3 and 4 (reading the progress file for the language) are
-  unchanged; step 6 still sets `date` (unused by the screen in this mode).
+- `_ready` step 8 always opens practice: with `--practice` the `--practice` branch runs first (`practice_index = 0`,
+  `_open_practice()`); otherwise `_open_practice()` with the random index of step 7, unchanged. `_open_day()` is not
+  called. Steps 3 and 4 (reading the progress file for the language) are unchanged; step 6 still sets `date` (unused by
+  the screen in this mode).
+- So a practice-only game opens on a random practice set, exactly like a normal game whose player presses Practice;
+  only `--practice` gives set 0. This is intended (deterministic screenshots go through `--practice`); a game that
+  wants a fixed first set has no hook for it in 0.2.0 and asks for one.
 - Build: `mode_btn` is still created (the member stays valid for game code and tests) and is hidden.
-- `_refresh()`: `mode_btn.visible = not _practice_only()`, set in both branches before `refreshed` is emitted.
+- `_refresh()`: `mode_btn.visible = not _practice_only()`, set in both branches before `refreshed` is emitted. The hook
+  is read on every refresh, so a game whose hook changes from true to false at run time gets the mode button back on
+  the next refresh.
 - `_toggle_mode()`: returns at once when `_practice_only()` is true.
 - Everything else follows practice behaviour: attempts are not saved, Share is hidden, Next after the last level opens
   the next set, the language toggle is still saved.
 - A practice-only game must ship at least one practice set; without one the screen shows `t("no_puzzle")`, which the
-  game overrides with a fitting text.
-- `--date` has no effect in this mode; `--practice` still selects set 0 (deterministic screenshots).
+  game overrides with a fitting text. The screen does not crash and the mode button stays hidden.
+- `--date` has no effect in this mode.
 
 When the hook returns false (default) nothing changes: `mode_btn.visible` is true as before.
 
-Acceptance (fixture screen with a member flag `practice_only`):
+Acceptance (fixture screen with the member flag `practice_only`; tests in `tests/test_release_020.gd` and
+`tests/test_retest_020.gd`, all green):
+- Without the flag: `mode_btn.visible == true` and the day is open; every existing screen test passes unchanged.
 - With the flag: after `_ready`, `practice == true`, `mode_btn.visible == false`, the subtitle is the practice text;
-  `_toggle_mode()` leaves `practice` true and `puzzles` unchanged; after moves and a solve no progress file entry for
-  any date is written (the file holds only the language after a language toggle); after the last level, Next opens the
-  next set; `mode_btn` stays hidden after a language toggle and after Next.
-- Without the flag: `mode_btn.visible == true` and every existing screen test passes unchanged.
-- White Shift on 0.2.0: 177 checks green; the screenshots of section 10 pixel-identical.
+  `practice_index` is within the number of sets; `_toggle_mode()` leaves `practice` true and `puzzles` unchanged; Share
+  is hidden; all three levels can be solved; no progress file is written by playing; after the last level, Next opens
+  set `practice_index + 1` at level 0; `mode_btn` stays hidden after Next and after a language toggle; after the
+  language toggle the progress file exists and holds no day entry.
+- With the flag and `--practice`: `practice == true` and `practice_index == 0`.
+- With the flag and no practice sets: no crash, `t("no_puzzle")`, mode button hidden, toggle ignored.
+- White Shift on 0.2.0: its tests green (met, see the status above). Its debug screenshots of section 10 have not been
+  compared on 0.2.0 (open, section 13.6).
 
 ### 13.2 Test runner counts script errors
 
 Decision and alternatives: ADR 0005.
 
-`tests/test_runner.gd` gets an inner class (no `class_name`) that extends `Logger`:
+`tests/test_runner.gd` has an inner class (no `class_name`) that extends `Logger`:
 
 ```gdscript
 class _ScriptErrors extends Logger:
 	var lines: PackedStringArray = []
 	var _lock := Mutex.new()
 	func _log_error(function: String, file: String, line: int, code: String, rationale: String,
-			editor_notify: bool, error_type: int, script_backtrace: Array[ScriptBacktrace]) -> void
-		# when error_type == ERROR_TYPE_SCRIPT: under _lock, append "%s:%d %s" % [file, line, rationale or code]
-	func _log_message(message: String, error: bool) -> void
+			_editor_notify: bool, error_type: int, _script_backtrace: Array[ScriptBacktrace]) -> void
+		# when error_type == Logger.ERROR_TYPE_SCRIPT: under _lock, append "%s:%d %s" % [file, line, text],
+		# text = rationale, else code, else function
+	func _log_message(_message: String, _error: bool) -> void
 		# nothing
 ```
 
-- `_ready`: create the logger, `OS.add_logger(logger)`, `await _run()`, `OS.remove_logger(logger)`; then for every
-  collected line: `failed += 1` and `printerr("FAIL: script error: " + line)`; then the existing `--min-checks` check,
-  summary line and exit code (1 when `failed > 0`).
+- `_ready`: section 5.13, steps 1 to 5.
 - The logger callback only appends under the mutex; it never prints and never calls `check` (callbacks may come from
   other threads and printing inside a logger callback recurses into the logger).
 - Only `ERROR_TYPE_SCRIPT` counts. `push_error` (type `ERROR_TYPE_ERROR`), warnings and shader errors do not, so tests
-  that deliberately call kit functions that `push_error` keep passing.
+  that deliberately call kit functions that `push_error` keep passing. Assumption A10 holds.
+- A parse error in a script compiled during `_run()` (for example a suite whose source does not parse) arrives as
+  `ERROR_TYPE_SCRIPT` and fails the run too.
+- `--min-checks` with a value that is not a non-negative integer (for example `abc`, `-1`, `1.5`, `0x10`, an empty
+  value) fails the run before any test runs. In 0.1.0 such a value was read as 0 or a negative number and silently
+  disabled the guard. A value too large for int64 saturates and then fails through step 4.
 - The summary line keeps its format; `failed` now includes script errors.
 - Games get this through `extends WhiteTestRunner` without changes.
 
-Acceptance (two fixture scenes under `tests/fixtures/`, each a root `Node` with a script that extends
-`WhiteTestRunner`, no `class_name`, run as child processes like `test_precompute.gd`):
+Acceptance (runner fixtures under `tests/fixtures/`, run as child processes like `test_precompute.gd`; tests in
+`tests/test_release_020.gd` and `tests/test_retest_020.gd`, all green):
 - `runner_script_error.tscn`: `_run` does `check(true, ...)`, calls a helper that calls a method on a `null` Object
-  variable and then `check(true, ...)` (never reached), then `check(true, ...)` after the helper. Expected: exit code 1,
+  variable and then `check(true, ...)` (never reached), then `check(true, ...)` after the helper. Result: exit code 1,
   output contains `tests: 2 passed, 1 failed` and `FAIL: script error:`.
-- `runner_push_error.tscn`: `_run` does `check(true, ...)` and `push_error("expected")`. Expected: exit code 0, output
+- `runner_push_error.tscn`: `_run` does `check(true, ...)` and `push_error("expected")`. Result: exit code 0, output
   `tests: 1 passed, 0 failed`.
-- Kit tests and White Shift's tests stay green on 0.2.0 (no hidden script errors). If a hidden script error surfaces in
-  White Shift, that is a finding for White Shift, not a reason to weaken the runner.
-- If `runner_push_error` fails because `push_error` is reported as a script error (assumption A10 wrong), the developer
-  stops and reports; the fallback in ADR 0005 is then chosen by the architect.
+- `runner_parse_error.tscn`: `_run` does `check(true, ...)`, compiles a script source with a syntax error and checks
+  that it can be instantiated. Result: exit code 1 and `FAIL: script error:` in the output.
+- `runner_await_error.tscn`: a script error after an `await` is counted; two script errors in one run count as two.
+- With `runner_push_error.tscn`: `--min-checks=abc` gives exit code 1 and `bad --min-checks value`; `--min-checks=-3`
+  gives exit code 1; `--min-checks=1` gives exit code 0; `--min-checks=2` gives exit code 1 and `only 1 checks ran`.
+- Kit tests and White Shift's tests stay green on 0.2.0: met, no hidden script errors surfaced.
 
-`--min-checks` stays: it also guards against a suite that is not called at all.
+### 13.3 Defined results for invalid input (B2, B3)
 
-### 13.3 Release
+Decision and alternatives: ADR 0006. Specification in sections 5.2 and 5.4; summary:
 
-`VERSION` and `WhiteKit.VERSION` `0.2.0`; `CHANGELOG.md` section `0.2.0` listing `_practice_only()`, the runner change
-and the documentation of 0.1.0 behaviour that this design now describes (`refreshed`, `is_date`, merge details); tag
-`v0.2.0` on the commit merged to `main`.
+- `WhiteRng.range_int(from, to)`: a bad range (`from > to`, a span that overflows int64, or more than 2^32 values) is a
+  `push_error` and returns `from` at once, without drawing. In 0.1.0 an overflowing span could hang in the rejection
+  loop or take a modulo by zero. Valid ranges give the same output as before (retested bit-exact against the 0.1.0
+  formula); the frozen output of section 8 is untouched.
+- `WhiteDaily.number(date, first_day)`: an invalid `date` or `first_day` (not `_valid`) is a `push_error` and returns
+  0. `WhiteDaily.add_days(date, days)`: an invalid `date` is a `push_error` and returns `date` unchanged. Exactly one
+  `push_error` per rejected call and no engine output. In 0.1.0 both passed the text to `Time`, which printed an engine
+  error and returned a meaningless value.
+- 0 is also the valid number of the day before the first day, so a caller with untrusted input checks `is_date` first;
+  the result alone does not tell valid from invalid.
+- `is_date` returns `_valid(text)` directly; the round trip through `add_days` of the 0.1.0 design is gone (5.2).
+  Retested against an independent calendar computation for every day from 1970-01-01 to 2100-12-31.
+
+Acceptance: the B2 and B3 criteria in sections 5.2 and 5.4 (tests in `tests/test_release_020.gd` and
+`tests/test_retest_020.gd`, all green).
+
+### 13.4 Check counts and thresholds (B7)
+
+| Moment | Kit checks | Threshold in kit CI and `templates/ci.yml` |
+|---|---|---|
+| Tag `v0.1.0` | 258 | 250 |
+| After the 0.1.0 test round (suites `test_independent.gd`, `test_edge.gd`, `test_precompute_edge.gd`) | 471 | 250 |
+| Tag `v0.2.0` (plus 51 checks in `test_release_020.gd`) | 522 | 522 |
+| `develop` after the 0.2.0 test round (plus 113 checks in `test_retest_020.gd`, commit 896e395) | 635 | 522 (to be raised, 13.6) |
+
+From 0.2.0 the threshold equals the check count of the tag, so losing a single check of the tagged tests fails the
+run. Rule: a commit that adds kit checks raises the threshold in `.github/workflows/ci.yml` and `templates/ci.yml` to
+the new count in the same commit; the threshold is only lowered when checks are removed on purpose, and the changelog
+says so. The test round's commit 896e395 did not raise it (the tester does not change CI configuration); that is the
+first item of 13.6.
+
+The game template's kit threshold must not exceed the check count of the kit tag a game pins. A raise to 635 therefore
+only reaches games with the next kit tag that contains those checks.
+
+### 13.5 Release
+
+`VERSION` and `WhiteKit.VERSION` are `0.2.0`; `CHANGELOG.md` has a section `0.2.0` listing `_practice_only()`, the
+runner change and the `--min-checks` check, the `range_int` and `WhiteDaily` fixes, the new threshold 522 and the
+documentation of 0.1.0 behaviour that this design now describes (`refreshed`, `is_date`, merge details). The tag
+`v0.2.0` sits on `develop` (0a58b2e), not on a `main` commit; section 8 lists this as an exception, like `v0.1.0`.
+
+### 13.6 Open after 0.2.0
+
+- Kit CI threshold: raise `--min-checks` in `.github/workflows/ci.yml` to 635 together with the test commit 896e395.
+  `templates/ci.yml` stays at 522 until the next tag (13.4).
+- Pull request `develop` -> `main` as a merge commit (brings `v0.1.0` and `v0.2.0` into `main`); kit CI green on
+  `main`.
+- White Shift: compare the debug screenshots of section 10 on `v0.2.0` with those on `v0.1.0` (expected
+  pixel-identical; not yet done).
+- White Tally pins `v0.2.0` and removes its interim overrides of `_open_day()` and `_refresh()` in favour of
+  `_practice_only()`.
