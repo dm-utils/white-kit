@@ -18,6 +18,7 @@ var level := 0
 var puzzles: Array = [] ## puzzles on screen: dictionaries with at least "par"
 var attempts: Array = [] ## a WhiteAttempt per level
 var times: Array = [] ## ms per level before the current run of the clock
+var margin: MarginContainer ## root margin container; its margins follow _insets_for
 var view: Control
 var title: Label
 var subtitle: Label
@@ -134,6 +135,16 @@ func _on_debug_extra() -> void:
 	pass
 
 
+## 0 = no limit; otherwise the column is at most this wide, centred
+func _max_content_width() -> int:
+	return 0
+
+
+## True: the display safe area is added to the margins
+func _use_safe_area() -> bool:
+	return false
+
+
 # --- setup -------------------------------------------------------------------------------------------------------
 
 func _ready() -> void:
@@ -162,7 +173,7 @@ func _build() -> void:
 	bg.color = WhiteTheme.BG
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
-	var margin := MarginContainer.new()
+	margin = MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for side in ["left", "right", "top", "bottom"]:
 		margin.add_theme_constant_override("margin_" + side, WhiteTheme.MARGIN)
@@ -233,6 +244,33 @@ func _build() -> void:
 	for b in all:
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(b)
+	get_viewport().size_changed.connect(_apply_insets)
+	_apply_insets()
+
+
+## {left, top, right, bottom} margins in px for a viewport of this size.
+func _insets_for(viewport_size: Vector2) -> Dictionary:
+	var ins := {"left": 0.0, "top": 0.0, "right": 0.0, "bottom": 0.0}
+	if _use_safe_area():
+		ins = WhiteSafeArea.insets(viewport_size, str(_debug.get("safe", "")))
+	var left: int = WhiteTheme.MARGIN + int(ins.left)
+	var top: int = WhiteTheme.MARGIN + int(ins.top)
+	var right: int = WhiteTheme.MARGIN + int(ins.right)
+	var bottom: int = WhiteTheme.MARGIN + int(ins.bottom)
+	if _max_content_width() > 0:
+		@warning_ignore("integer_division")
+		var extra := maxi(0, (int(viewport_size.x) - left - right - _max_content_width()) / 2)
+		left += extra
+		right += extra
+	return {"left": left, "top": top, "right": right, "bottom": bottom}
+
+
+func _apply_insets() -> void:
+	var ins := _insets_for(get_viewport_rect().size)
+	margin.add_theme_constant_override("margin_left", ins.left)
+	margin.add_theme_constant_override("margin_top", ins.top)
+	margin.add_theme_constant_override("margin_right", ins.right)
+	margin.add_theme_constant_override("margin_bottom", ins.bottom)
 
 
 # --- puzzles -----------------------------------------------------------------------------------------------------
@@ -346,7 +384,8 @@ func _refresh() -> void:
 
 func _elapsed() -> int:
 	var t: int = times[level]
-	if _clock_from >= 0:
+	# frozen in screenshots: deterministic clock text
+	if _clock_from >= 0 and not _debug.has("shot"):
 		t += Time.get_ticks_msec() - _clock_from
 	return t
 
