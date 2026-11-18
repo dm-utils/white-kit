@@ -34,7 +34,7 @@ jobs:
         run: timeout 600 godot --headless --path host --import
 
       - name: Kit tests
-        run: timeout 300 godot --headless --path host res://addons/white_kit/tests/run_kit_tests.tscn -- --min-checks=635
+        run: timeout 300 godot --headless --path host res://addons/white_kit/tests/run_kit_tests.tscn -- --min-checks=764
 
       - name: Screenshot tool smoke test (two runs of the fixture scenarios must be identical)
         run: |
