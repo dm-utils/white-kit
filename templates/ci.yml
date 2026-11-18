@@ -49,6 +49,19 @@ jobs:
       - name: Game tests
         run: timeout 300 godot --headless --path . res://tests/run_tests.tscn -- --min-checks=${{ env.MIN_CHECKS }}
 
+      - name: Debug screenshots (tools/shots.txt)
+        if: hashFiles('tools/shots.txt') != ''
+        run: |
+          sudo apt-get install -y -qq xvfb libgl1-mesa-dri >/dev/null
+          addons/white_kit/tools/shots.sh run . tools/shots.txt build/shots
+
+      - uses: actions/upload-artifact@v7
+        if: always() && hashFiles('tools/shots.txt') != ''
+        with:
+          name: shots
+          path: build/shots
+          retention-days: 7
+
       - name: Puzzles left (warn when fewer than 14 days are built ahead)
         if: hashFiles('data/daily.json') != ''
         run: |

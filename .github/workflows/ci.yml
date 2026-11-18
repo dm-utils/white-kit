@@ -36,6 +36,14 @@ jobs:
       - name: Kit tests
         run: timeout 300 godot --headless --path host res://addons/white_kit/tests/run_kit_tests.tscn -- --min-checks=635
 
+      - name: Screenshot tool smoke test (two runs of the fixture scenarios must be identical)
+        run: |
+          sudo apt-get install -y -qq xvfb libgl1-mesa-dri >/dev/null
+          kit=host/addons/white_kit
+          $kit/tools/shots.sh run host $kit/tests/fixtures/shots.txt build/a
+          $kit/tools/shots.sh run host $kit/tests/fixtures/shots.txt build/b
+          $kit/tools/shots.sh compare host build/a build/b
+
       - name: Reference vectors (Godot against the Python reference)
         run: |
           pick='^(fnv|seed|state|u32|int|float) '
