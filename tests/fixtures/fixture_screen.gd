@@ -3,11 +3,15 @@ extends WhiteDayScreen
 ## Flags are set before the node enters the tree.
 
 const Counter := preload("res://addons/white_kit/tests/fixtures/counter_rules.gd")
+const TileViewFixture := preload("res://addons/white_kit/tests/fixtures/tile_view_fixture.gd")
 const DIR := "res://addons/white_kit/tests/fixtures/"
 const SAVE := "user://white_kit_test_progress.json"
 
 var final_practice := false
 var practice_only := false
+var max_width := 0
+var safe_area := false
+var use_tile_view := false ## _make_view returns a WhiteTileView showing a fixed 4x3 board
 var count_final_text := ""
 var play_message_state := -1 ## state that shows "NOMOVE"; -1 = hook not overridden
 var shown: Array = []
@@ -69,7 +73,19 @@ func _new_attempt(_puzzle: Dictionary, count_mode: int) -> WhiteAttempt:
 
 
 func _make_view() -> Control:
+	if use_tile_view:
+		var v: WhiteTileView = TileViewFixture.new()
+		v.show_cells(4, 3, PackedByteArray([2, 0, 3, 0, 0, 1, 0, 2, 3, 3, 0, 1]))
+		return v
 	return Control.new()
+
+
+func _max_content_width() -> int:
+	return max_width
+
+
+func _use_safe_area() -> bool:
+	return safe_area
 
 
 func _view_show(a: WhiteAttempt) -> void:
