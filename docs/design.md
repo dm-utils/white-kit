@@ -1225,9 +1225,9 @@ documentation of 0.1.0 behaviour that this design now describes (`refreshed`, `i
 - White Tally pins `v0.2.0` and removes its interim overrides of `_open_day()` and `_refresh()` in favour of
   `_practice_only()`. Done (White Tally design 7.1).
 
-## 14. Release 0.3.0 (designed)
+## 14. Release 0.3.0 (built)
 
-Status: designed 2026-11-18 (board card #011), not built. Decision and alternatives: ADR 0007. Everything is new API
+Status: designed 2026-11-18 (board card #011), built 2026-11-18 (card #012), 764 checks; deviations in 14.10. Decision and alternatives: ADR 0007. Everything is new API
 and backward compatible (new classes, two new screen hooks with defaults that keep today's behaviour), so the version
 is MINOR. The release also contains board cards #008 (kit CI threshold) and #010 (screenshot comparison).
 
@@ -1362,6 +1362,7 @@ var input_mode := InputMode.CELL_MOVES
 var input_enabled := true
 var grid_w := 0
 var grid_h := 0
+var cell_px := 0.0                       # cell size of the last draw, for hooks (added in the build)
 ```
 
 Public functions:
@@ -1690,3 +1691,19 @@ Acceptance (every item is a check):
 
 Where the tag sits follows section 8: on the commit merged to `main` when the `develop` -> `main` pull request exists;
 otherwise on `develop` as for `v0.1.0` and `v0.2.0` (the same merge-commit rule then applies).
+
+### 14.10 As built (deviations)
+
+- `WhiteTileView.cell_px`: public member with the cell size in px of the last draw. The default `_draw_tile_body` needs
+  it for the corner radius, and game hooks need it for sizes (pips, join width); the hook signatures give only a rect.
+- `_apply_insets()` sets the margins as theme constant overrides on `margin` (`margin_left` and so on); the acceptance
+  check reads them with `get_theme_constant`.
+- Retest B7 of 0.2.0 asked that the template threshold equals the kit CI threshold. The kit CI threshold now rises
+  with every commit that adds checks, while the template names the count of the tagged release, so the test checks
+  `template <= kit CI`. At a tag both are equal (764).
+- A `vanish` step with a cell that holds no tile is skipped silently for that cell (no error); a `move` from an empty
+  cell is an error as specified.
+- `shots.sh`: a scenario file that cannot be read exits 2 (`cannot read <file>`); a duplicate scenario name is a bad
+  line; scenario and project paths are relative to the current directory.
+- `before-after` against `v0.2.0` on White Shift (seven scenarios): six `same`; `--keys` differs only in the clock box
+  (`keys.png 192 pixels box 682,235,13,18`), as announced in 14.2.
