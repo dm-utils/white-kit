@@ -21,6 +21,7 @@ const SUITES := [
 	"res://addons/white_kit/tests/test_tile_view.gd",
 	"res://addons/white_kit/tests/test_shots.gd",
 	"res://addons/white_kit/tests/test_release_030.gd",
+	"res://addons/white_kit/tests/test_independent_030.gd",
 ]
 
 
