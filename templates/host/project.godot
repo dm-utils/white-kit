@@ -6,6 +6,14 @@ config_version=5
 
 config/name="White Kit host"
 config/features=PackedStringArray("4.7", "GL Compatibility")
+run/main_scene="res://addons/white_kit/tests/fixtures/fixture_main.tscn"
+
+[display]
+
+window/size/viewport_width=720
+window/size/viewport_height=1280
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
 
 [rendering]
 
