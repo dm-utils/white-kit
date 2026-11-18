@@ -70,8 +70,8 @@ settings (Pages is deployed by Actions). `scan-ai-traces.sh` and `setup-agents.s
 
 Out of scope (unchanged on purpose): the Godot addon paths `addons/white_kit` and `addons/st33f`, class and autoload
 names (`WhiteTileView`, `St33f`), the npm scope `@st33f/*`, the worker prefix `st33f-*` and the API hosts
-(`*-dev.st33fd3v.workers.dev`, `api.steefbeest.nl`, ...), Cloudflare D1 database names, GitHub secret names, the
-dm-utils/pulse repository, and the frozen seed salt `whitecap-daily-` (section 4).
+(`*-dev.st33fd3v.workers.dev`, `api.steefbeest.nl`, ...), Cloudflare D1 database names, GitHub secret names and the
+dm-utils/pulse repository.
 
 ### 2. Target names
 
@@ -129,12 +129,14 @@ updates and then deletes what is still on `whitecap`.
 The i18n text update is required: CI pulls reviewed Final texts into the build, so without it the old title would come
 back from the portal.
 
-### 4. Whitecap's local daily seed salt stays `whitecap-daily-`
+### 4. Whitecap's local daily seed salt becomes `white-cap-daily-`
 
-`platform/daily.gd` hashes `"whitecap-daily-" + day` for the offline daily. This is a frozen constant, not a name: it
-keeps the offline daily of a given date identical across old and new builds and keeps the golden value
-`LOCAL_SEED_2026_11_10` in the tests valid. The developer adds a comment that marks it as frozen (ADR white-kit
-0008). The online daily changes with the game id (server HMAC over `white-cap`); that is accepted.
+`platform/daily.gd` hashes `"white-cap-daily-" + day` for the offline daily (was `whitecap-daily-`). Owner decision
+2026-11-18 (question Q2, deviating from the first proposal to freeze the salt): the salt follows the name, so every offline
+daily changes, the golden value `LOCAL_SEED_2026_11_10` in the tests is recomputed (FNV-1a over
+`white-cap-daily-2026-11-10` gives 1706776782, computed independently in Python) and old and new builds have a different
+offline daily on the same day. The online daily changes with the game id as well (server HMAC over `white-cap`). Both
+are accepted in the test phase. This is part of the White Cap game repository (step P5).
 
 ### 5. Old addresses redirect through one Worker in Pulse
 
@@ -205,9 +207,8 @@ The workstation steps (folders, workspace, local tooling) are kept in the privat
   deploy. Rejected in favour of an alias that is removed once all test devices are updated.
 - **Keep `whitecap` as the game id and rename only what players see**: least work, but contradicts the owner's rule
   that game ids follow `white-<name>`, and leaves one exception in every Pulse table forever. Rejected.
-- **Rename the local daily salt to `white-cap-daily-`**: consistent on paper, but changes every offline daily, breaks
-  a golden test value and gives old and new builds a different offline daily on the same day, for no player benefit.
-  Rejected (section 4).
+- **Freeze the local daily salt `whitecap-daily-`**: keeps every offline daily and the golden test value, but leaves one
+  old spelling in a technical name. Rejected by the owner (section 4).
 - **Keep the promo workers' names (`st33f-whitecap-site`) and only change their routes**: one step less, but a
   technical name with the old spelling would remain, and the old hosts must be freed from these workers anyway.
   Rejected.
@@ -232,7 +233,7 @@ Dev = developer, T = tester.
 | P6 | PL | Delete the 7 old play CNAME records and the 3 old promo workers (`st33f-whitecap-site`, `st33f-whitelie-site`, `st33f-whiteglove-site`); run `redirects.yml`; run `steefbeest-site.yml` | live check of `redirects.yml` green; steefbeest.nl links only new hosts |
 | P7 | PL with owner, no sessions running | Local environment, section 8 and the local checklist | checklist below |
 | P8 | T | Card #017: acceptance criteria below | test report without blocking/high findings |
-| P9 | Dev, after the owner confirms all test phones run a new build | Cleanup: remove `GAME_ALIASES` entry and old dev origins; cleanup migrations (section 3); remove the `~/Git/whitecap` symlink when unused | Pulse CI green; no `whitecap` rows in dev D1 |
+| P9 | Dev, right after #017 (owner decision Q4) | Cleanup: remove `GAME_ALIASES` entry and old dev origins; cleanup migrations (section 3); remove the `~/Git/whitecap` symlink when unused | Pulse CI green; no `whitecap` rows in dev D1 |
 
 P3 and P4 may run in parallel; P5 may start when P2 is deployed (the game repos' CI talks to the new id). Between the
 Pages switch (P4) and the redirect (P6) an old play host does not answer; keep that window short by doing P6 for a
@@ -255,8 +256,8 @@ game right after its P4 certificate is in place, or accept it (test phase).
 - [ ] `apps/steefbeest-site/build.mjs`: new ids, names, hosts; pages rebuilt.
 - [ ] `apps/redirects` and `.github/workflows/redirects.yml` (section 5) with tests.
 - [ ] Tests: replace `whitecap` by `white-cap` in all app tests and in `packages/godot-sdk` (`project.godot`,
-      `tests/run_tests.gd`, `tests/e2e.gd`; the User-Agent check becomes `White-cap/`, which is what
-      `"white-cap".capitalize()` gives); add alias tests (old id reads and writes the same rows as the new id;
+      `tests/run_tests.gd`, `tests/e2e.gd`; the User-Agent check becomes `White Cap/`, which is what
+      Godot's `"white-cap".capitalize()` gives); add alias tests (old id reads and writes the same rows as the new id;
       `canonicalGame('whitecaps')` is null; a run token with `g: 'whitecap'` verifies for `white-cap`).
 - [ ] `package-lock.json` regenerated (`npm install`) after the workspace renames.
 - [ ] Root `README.md`: check for old names and hosts.
@@ -278,7 +279,7 @@ game right after its P4 certificate is in place, or accept it (test phase).
       `tools/test_i18n_sync.py`.
 - [ ] `platform/my_data.gd`: `FILE_NAME := "white-cap-my-data.json"`, `"game": "white-cap"`; tests in
       `tests/run_tests.gd` (configure and my-data checks).
-- [ ] `platform/daily.gd`: salt unchanged, comment "frozen seed salt (white-kit ADR 0008)".
+- [ ] `platform/daily.gd`: salt `"white-cap-daily-"`; `tests/run_tests.gd`: `LOCAL_SEED_2026_11_10 = 1706776782`.
 - [ ] `tests/bot_damage_extra.gd`: expects `WHITE CAP`; `tests/online_dev_check.gd`: `/v1/games/white-cap/pvp`.
 - [ ] `tools/contact_sheet.py`, `tools/fetch_ci_shots.sh`: "White Cap" titles.
 - [ ] `README.md` "# White Cap" with new play and promo addresses; `docs/design.md`, `docs/glossary.md`,
@@ -350,8 +351,7 @@ Repositories and tooling:
 
 14. CI green on develop in all 7 game repos, white-kit and pulse; `scan-ai-traces` 0 failures for every repo.
 15. `grep -rIni --exclude-dir={.git,.godot,node_modules} -E 'whitecap|whitelie|whiteglove|whiteshift|whitetally|whitedrift|whitesum'`
-    in each repo only hits the allowed exceptions: app ids `com.st33f.white*`, `White<Name>.exe`, the frozen salt and
-    its golden test, `GAME_ALIASES` and its tests, the old hosts in `apps/redirects`, the migrations, the dev origins
+    in each repo only hits the allowed exceptions: app ids `com.st33f.white*`, `White<Name>.exe`, `GAME_ALIASES` and its tests, the old hosts in `apps/redirects`, the migrations, the dev origins
     list until cleanup, and older ADRs / test reports.
 16. Local: `~/Git/white-cap` is the repo, `~/Git/whitecap` a symlink; `git remote -v` shows `dm-utils/white-cap`;
     `docs/board.md` resolves to `projects/white-cap/board.md`; `~/Git/white.code-workspace` opens all 14 folders;
@@ -367,7 +367,7 @@ Repositories and tooling:
 | Worker custom domain cannot be created while a DNS record or another worker holds the host | P6 deletes old CNAMEs and old promo workers first |
 | Data with the old game id: collisions, split crash groups (fingerprint includes the game id), daily seed changes mid-day, run tokens with the old id | `UPDATE OR IGNORE` plus cleanup migration; crash group split accepted; deploy outside the evening play window; `verifyRun` uses `canonicalGame` |
 | i18n pull restores "Whitecap" from Final texts | i18n migration rewrites the texts in the namespace |
-| Installed Android builds send `whitecap` | alias until the owner confirms all test phones are updated (P9) |
+| Installed Android builds send `whitecap` | alias until right after #017 (P9, owner decision Q4) |
 | Android update refused | same app id and the fixed test key (secret `ANDROID_DEBUG_KEYSTORE_B64`); `version/code` stays 1, equal codes install as an update; if a phone has a build signed with a throw-away key, uninstall once |
 | Web progress and sign-in are per origin: players on the new host start without local progress and signed out | signed-in players get their cloud profile back after signing in; offline-only progress is lost (test phase, accepted) |
 | Desktop user folder follows `config/name` (`app_userdata/White Cap`) | accepted; CI path updated |
@@ -384,16 +384,20 @@ Repositories and tooling:
   repo name. The White Kit glossary defines "game id" as the repository name for all games, not only puzzles.
 - Pulse carries an alias table for one release cycle; the cleanup step removes it.
 - One more Worker in Pulse that never changes once deployed; old links keep working permanently.
-- The White Cap online daily of the switch day differs before and after the deploy.
+- The White Cap online daily of the switch day differs before and after the deploy, and every offline daily changes
+  with the new salt.
 - Owner and project lead do the account-bound steps (GitHub rename, Pages, DNS, worker deletes, manual deploys);
   everything in git is done by the developer and checked by the tester.
 
 ## Open questions for the owner
 
 - Q1: name for the design folder `Puzzels` (proposal: `white-puzzles`), or keep it as is because it is not a game?
-- Q2: agree that the offline daily salt `whitecap-daily-` stays frozen (section 4)?
+  Answered 2026-11-18: `white-puzzles` (local only).
+- Q2: agree that the offline daily salt `whitecap-daily-` stays frozen (section 4)? Answered 2026-11-18: no, the salt
+  is renamed to `white-cap-daily-` (section 4).
 - Q3: agree that an old play host may be unreachable for the minutes to an hour between the Pages switch and the
-  redirect?
-- Q4: when may the alias go (P9): right after #017, or after you have updated the test phones?
+  redirect? Answered 2026-11-18: yes.
+- Q4: when may the alias go (P9): right after #017, or after you have updated the test phones? Answered 2026-11-18:
+  right after #017.
 - Q5: is there a showcase repository for Whitecap whose name or text should follow (the export store is keyed on the
   folder name and moves with P7)?

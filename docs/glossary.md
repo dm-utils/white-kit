@@ -26,7 +26,6 @@ Terms used in the code, the design (`docs/design.md`) and the ADRs. Code names i
 | Final solution only (`FINAL_ONLY`) | Count mode in which only the moves from the start position to the current state count; undo gives a move back, restart resets to zero. White Tally practice. |
 | First day | The date of puzzle #1 of a game; parameter of the puzzle number. |
 | FNV-1a | The 64-bit hash that turns a seed text into a seed (`WhiteSeed.fnv1a64`). |
-| Frozen seed salt | A seed text prefix that keeps its old spelling on purpose after a rename, so seeds stay the same (White Cap's offline daily `whitecap-daily-`, ADR 0008). |
 | Frozen shot clock | In debug screenshot mode (`--shot`) the screen shows the stored time without the running part, so screenshots do not depend on machine speed (kit 0.3.0). |
 | Game alias | An old game id that the platform (Pulse) still accepts and maps to the current one (`GAME_ALIASES`, `whitecap` -> `white-cap`); removed once all installed builds use the new id (ADR 0008). |
 | Game id | The repository name of a game, lowercase `white-<name>` (`white-cap`, `white-lie`, `white-glove`, `white-shift`, `white-tally`, `white-sum`, `white-drift`); first part of a puzzle game's seed texts and the id of a game on the platform (ADR 0008). |

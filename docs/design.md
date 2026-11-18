@@ -883,7 +883,7 @@ integers of 2^53 or more (for example raw seeds) are stored as strings (A9).
 ### 6.3 Progress file
 
 Section 5.8. Games share the format; each game has its own file because each is a separate web origin
-(`play.<game>.steefbeest.nl`) and a separate app.
+(`play.white-<name>.steefbeest.nl`) and a separate app.
 
 ## 7. Tools and CI
 

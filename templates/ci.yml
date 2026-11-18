@@ -1,5 +1,5 @@
 # CI: tests and the web build on develop/main, superseded runs cancelled. The release web build of develop is the
-# play version on GitHub Pages (play.<game>.steefbeest.nl). Copy to .github/workflows/ci.yml, adapt this header and
+# play version on GitHub Pages (play.white-<name>.steefbeest.nl). Copy to .github/workflows/ci.yml, adapt this header and
 # MIN_CHECKS.
 name: CI
 
