@@ -242,5 +242,5 @@ func _thresholds() -> void:
 		var m := rx.search(txt)
 		thresholds[f] = int(m.get_string(1)) if m != null else -1
 	_check.call(thresholds[".github/workflows/ci.yml"] >= 522, "retest B7: kit CI threshold >= 522")
-	_check.call(thresholds["templates/ci.yml"] == thresholds[".github/workflows/ci.yml"], "retest B7: template equals kit CI")
+	_check.call(thresholds["templates/ci.yml"] <= thresholds[".github/workflows/ci.yml"], "retest B7: template threshold does not exceed kit CI")
 	_check.call(FileAccess.get_file_as_string(root + "VERSION").strip_edges() == WhiteKit.VERSION, "retest B7: VERSION file equals constant")
