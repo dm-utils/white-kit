@@ -85,7 +85,8 @@ before_after() {
 	fi
 	orig="$(git -C "$kit" rev-parse HEAD)"
 	new="${4:-$orig}"
-	trap 'git -C "$kit" checkout --quiet "$orig"' EXIT
+	# expanded now: locals are gone when the trap fires
+	trap "git -C '$kit' checkout --quiet '$orig'" EXIT
 	rm -rf "$project/build/shots"
 	mkdir -p "$project/build/shots"
 	git -C "$kit" checkout --quiet "$old"
