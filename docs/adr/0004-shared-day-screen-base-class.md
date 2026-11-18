@@ -1,6 +1,6 @@
 # 0004 Shared day screen as a base class with hooks
 
-Status: accepted (2026-11-17); amended (2026-11-17, see below)
+Status: accepted (2026-11-17); amended (2026-11-17 and 2026-11-18, see below)
 
 ## Context
 
@@ -102,3 +102,28 @@ Alternatives:
 Consequences: a MINOR version (0.2.0). White Shift is unaffected (default false; verified on 0.2.0). White Tally
 removes its interim overrides when it updates to 0.2.0. When White Tally gets daily puzzles in phase 2 it returns false
 from the hook. The hook is read on every refresh, so the mode button returns as soon as the hook returns false.
+
+## Amendment 3 (2026-11-18, designed for 0.3.0): content width, safe area, frozen shot clock
+
+Context: the White Tally test found that on a desktop window the tabs, counter and buttons stretch over the full width
+while the board stays small in the middle. White Tally solved the safe area (notches) in its own `ui/main.gd` by
+reaching into the screen's margin container. White Sum and White Drift need both. Debug screenshots with `--keys` show
+a running clock and therefore differ between runs, which gets in the way of comparing screenshots before and after a
+kit update. Decision context for the wider 0.3.0 release: ADR 0007.
+
+Decision: two hooks, `_max_content_width() -> int` (default 0, no limit) and `_use_safe_area() -> bool` (default
+false), applied by the screen to its margin container on build and on every viewport size change; the container
+becomes the public member `margin`. In `--shot` mode the clock shows the stored time only. Specification: design 14.2.
+
+Alternatives:
+- Always limit the width and always apply the safe area: right for new games, but it changes White Shift's screen at
+  its next kit update without a request. Rejected; the defaults keep today's behaviour and new games opt in.
+- A `CenterContainer` with a fixed-width column instead of margins: also centres, but changes the node tree that games
+  and tests navigate, and the safe area still needs margins. Rejected; one mechanism (margins) covers both.
+- Let each game keep reaching into the screen's children for the margin container (White Tally's way): works, but
+  depends on the internal node order. Rejected; the member `margin` makes it explicit.
+- Stop the clock entirely in `--shot` mode: the stored times would then also differ from normal play, while only the
+  displayed value matters for screenshots. Rejected; only `_elapsed()` changes.
+
+Consequences: MINOR (0.3.0). No change for games that keep the defaults, except the clock text in screenshots with
+`--keys`. White Tally can drop its own safe-area code (design 14.7, optional).

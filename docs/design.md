@@ -1,7 +1,7 @@
 # White Kit - design
 
-Status: version 0.2.0 built and tagged (section 13); version 0.1.0 built and tagged, White Shift migrated onto it
-(section 10) and updated to 0.2.0.
+Status: version 0.3.0 designed, not built (section 14); version 0.2.0 built and tagged (section 13); version 0.1.0
+built and tagged, White Shift migrated onto it (section 10) and updated to 0.2.0.
 Decisions with their trade-offs are in `docs/adr/`; terms are defined in `docs/glossary.md`; code and release rules
 are in `docs/conventions.md`.
 
@@ -11,8 +11,9 @@ White Kit is the shared base of the White daily puzzle games (Godot 4.7.2, GDScr
 holds everything that is the same in every game of the series, so each game repository only contains its own rules,
 solver, generator, board drawing and texts.
 
-The first two users are White Shift (published, `dm-utils/white-shift`) and White Tally (being designed,
-`dm-utils/white-tally`). White Shift is migrated onto the kit without any change in behaviour (section 10).
+The users are White Shift (published, `dm-utils/white-shift`), White Tally (phase 1 built, `dm-utils/white-tally`),
+and White Sum and White Drift (designed, `dm-utils/white-sum` and `dm-utils/white-drift`, built on 0.3.0). White Shift
+is migrated onto the kit without any change in behaviour (section 10).
 
 Goals:
 
@@ -23,7 +24,9 @@ Goals:
    puzzle store, attempt record and progress file are the places where that connects (section 11). Nothing of that is
    built now.
 
-Out of scope: game rules, solvers, generators, board drawing, sound, statistics, tutorial, any network code.
+Out of scope: game rules, solvers, generators, the drawing of a game's own tiles and pieces, sound, statistics,
+tutorial, any network code. From 0.3.0 the kit has a board view base class for square-cell tile games (section 14.4);
+what a tile looks like and which move a gesture means stay in the game.
 
 ## 2. Assumptions
 
@@ -39,11 +42,14 @@ Out of scope: game rules, solvers, generators, board drawing, sound, statistics,
 | A8 | Puzzles shown by the shared screen are dictionaries with at least an integer `par`. | Games without par set `par` to their reference score. |
 | A9 | Puzzle data written by the precompute tool contains no whole-valued floats that must stay floats, and no integers of 2^53 or more (section 5.14). | A merge would rewrite such values; the game stores them as strings instead. |
 | A10 | Godot's `Logger` class (`OS.add_logger`, available since Godot 4.5) reports GDScript runtime errors with error type `ERROR_TYPE_SCRIPT` and `push_error` with `ERROR_TYPE_ERROR`. Basis of the test runner in 0.2.0 (ADR 0005). | Verified in 0.2.0 by the fixtures `runner_script_error` and `runner_push_error` (section 13.2): a call on `null` is counted, `push_error` is not. |
+| A11 | The grid games (White Tally, White Sum, White Drift) all use square cells, cell index `y * w + x` with `y` upwards, and direction codes `R = 0, L = 1, D = 2, U = 3`. Basis of `WhiteTileView` (0.3.0). | A game with another convention converts at the view boundary, or does not use the base class. |
+| A12 | Godot saves a viewport PNG deterministically: the same frame gives the same pixels on the same machine and driver (CI uses `xvfb` with `opengl3`). Observed in board card #009 (seven White Shift scenarios byte-identical). | The comparison tool (14.5) reports pixel counts and a bounding box, so small driver noise is visible and can be judged. |
 
 ## 3. Scope: what is in the kit
 
 Every candidate was checked against two questions: is it the same in both games, and is it stable enough that sharing
-it does not slow down either game.
+it does not slow down either game. The 0.3.0 additions for the grid games were checked the same way against White
+Tally, White Sum and White Drift (ADR 0007, section 14.1).
 
 | Candidate | In kit | Kit class | Where it was in White Shift | Reason |
 |---|---|---|---|---|
@@ -62,8 +68,10 @@ it does not slow down either game.
 | Test runner base | Yes | `WhiteTestRunner` | `tests/run_tests.gd` | Same `check(ok, what)` contract and exit code. |
 | Precompute tool skeleton | Yes | `WhitePrecompute` | `tools/build_puzzles.gd` | Argument parsing, key/seed loop, output and a safe merge are generic; generation is game code. |
 | CI workflow | Yes, as template plus composite action | `templates/ci.yml`, `ci/setup-godot/` | `.github/workflows/ci.yml` | Godot download/verify/cache is identical; the game workflow stays a short file. |
-| Rules, solver, generator, level parameters | No | - | `sim/board.gd`, `sim/solver.gd`, `sim/generator.gd` | Game-specific. |
-| Board drawing and touch input | No | - | `ui/board_view.gd` | Game-specific (swipes versus swaps). |
+| Rules, solver, generator, level parameters | No | - | `sim/board.gd`, `sim/solver.gd`, `sim/generator.gd` | Game-specific. Confirmed for the grid games in 0.3.0 (ADR 0007). |
+| Board drawing and touch input | White Shift: no. Grid games: base class from 0.3.0 | `WhiteTileView` (14.4) | `ui/board_view.gd` | White Shift's pieces and swipes stay its own; the grid games share layout, animation and input, and draw their own tiles. |
+| Safe area and maximum screen width | From 0.3.0 | `WhiteSafeArea`, screen hooks (14.2, 14.3) | not present (White Tally: `ui/safe_area.gd`) | Same need in every game; defaults keep existing games unchanged. |
+| Screenshot scenarios and comparison | From 0.3.0 | `tools/shots.sh`, `tools/compare_shots.gd` (14.5) | CI step in White Tally | One scenario file per game serves CI and kit updates. |
 | Game texts (hints, rules, units) | No | - | `ui/strings.gd` `TEXT` | Game-specific; the kit only has generic default texts. |
 | Generator measuring tool | No | - | `tools/measure.gd` | Depends on the generator's level parameters. |
 | Best route animation | No (hook) | - | `ui/main.gd` `_show_best` | Depends on the board view. |
@@ -96,9 +104,13 @@ white-kit/                     (= res://addons/white_kit/ in a game)
     theme.gd            WhiteTheme
     ui.gd               WhiteUi
     day_screen.gd       WhiteDayScreen
+    safe_area.gd        WhiteSafeArea      (0.3.0)
+    tile_view.gd        WhiteTileView      (0.3.0)
   tools/
     precompute.gd       WhitePrecompute    (extends SceneTree)
     rng_vectors.gd      prints reference vectors (extends SceneTree, no class_name)
+    compare_shots.gd    compares two screenshot folders (extends SceneTree, no class_name; 0.3.0)
+    shots.sh            runs screenshot scenarios, compares, before/after a kit update (0.3.0)
     kit_host.sh         creates the local host project and runs the kit tests
     reference/white_rng.py   independent Python reference of WhiteSeed and WhiteRng
   tests/
@@ -135,14 +147,14 @@ Rules for this layout:
 ## 5. Components and API
 
 All public classes extend `RefCounted` unless noted, and are statically typed. Names starting with `_` are internal,
-except the virtual hooks of `WhiteDayScreen`, `WhiteRules`, `WhitePrecompute` and `WhiteTestRunner`, which games
-override.
+except the virtual hooks of `WhiteDayScreen`, `WhiteRules`, `WhitePrecompute`, `WhiteTestRunner` and (0.3.0)
+`WhiteTileView`, which games override.
 
 ### 5.1 WhiteKit (`core/kit.gd`)
 
 ```gdscript
 class_name WhiteKit
-const VERSION := "0.2.0"        # always equal to the VERSION file
+const VERSION := "0.2.0"        # always equal to the VERSION file; "0.3.0" from release 0.3.0
 const INSTALL_PATH := "res://addons/white_kit/"
 ```
 
@@ -223,7 +235,7 @@ static func daily(game_id: String, date: String, level: int) -> int             
 static func practice(game_id: String, index: int, level: int) -> int              # fnv1a64(practice_text(...))
 ```
 
-`game_id` is the repository name: `white-shift`, `white-tally`.
+`game_id` is the repository name: `white-shift`, `white-tally`, `white-sum`, `white-drift`.
 
 Acceptance:
 - `String.num_uint64(WhiteSeed.fnv1a64(""), 16) == "cbf29ce484222325"`; for `"a"`: `"af63dc4c8601ec8c"`; for
@@ -547,6 +559,7 @@ var puzzles: Array = []        # puzzles on screen (Dictionaries with at least "
 var attempts: Array = []       # a WhiteAttempt per level
 var times: Array = []          # ms per level before the current run of the clock
 var view: Control              # the game's board view (from _make_view)
+var margin: MarginContainer    # 0.3.0: the root margin container (section 14.2)
 var title: Label
 var subtitle: Label
 var tabs: Array[Button] = []
@@ -601,6 +614,8 @@ Hooks (override in the game; defaults in brackets):
 | `_key_move(event: InputEventKey) -> Variant` | The move for a key press, or null. [null] |
 | `_on_debug_extra() -> void` | Extra debug action after `--keys` (White Shift: `--best`). [no-op] |
 | `_practice_only() -> bool` | Since 0.2.0 (section 13.1): open practice instead of the day, hide the mode button and ignore `_toggle_mode()`. [false] |
+| `_max_content_width() -> int` | Since 0.3.0 (section 14.2): maximum width of the screen column in viewport units; 0 = no limit. [0] |
+| `_use_safe_area() -> bool` | Since 0.3.0 (section 14.2): add the display safe area to the margins; debug override `--safe=l,t,r,b`. [false] |
 
 Flow (same as White Shift):
 
@@ -611,7 +626,8 @@ Flow (same as White Shift):
   _practice_count())`; (8) with `--practice`: `practice_index = 0` and open practice; else, when `_practice_only()`:
   open practice with the random index of step 7; else open the day; (9) with `--shot`: run the debug shot. Subclasses
   do not override `_ready`.
-- Build: background (`WhiteTheme.BG`, full rect); margin container (24 on every side); column with spacing 14: top row
+- Build: background (`WhiteTheme.BG`, full rect); margin container (24 on every side; from 0.3.0 the margins are set by
+  `_apply_insets()`, section 14.2); column with spacing 14: top row
   (title expanding, mode button, language button), subtitle, tab row (spacing 8, one toggle button per level,
   expanding), info row (counter left, par centred, clock right, each expanding), the view (expands vertically,
   minimum height 300), message (autowrap word-smart, centred, minimum height 84), button row (spacing 8: Undo, Restart,
@@ -655,14 +671,15 @@ Flow (same as White Shift):
   `WhiteFormat.day_line(t("share_line"), number, counts, pars)` with `null` for unsolved levels), `_store()` (nothing
   in practice or with `--shot`; else one `WhiteProgress.entry` per level - the running level with its live clock -
   into `_save.days[date]`, `WhiteProgress.write`, emit `progress_saved`), `_elapsed()`, `_stop_clock()`, `_process()`
-  (updates the clock label while it runs): as in White Shift.
+  (updates the clock label while it runs): as in White Shift. From 0.3.0 `_elapsed()` leaves out the running part
+  while `--shot` is given (section 14.2).
 - `_unhandled_input`: a key press without echo: Z or Backspace -> `_on_undo()`; R -> `_on_restart()`; otherwise
   `_key_move(event)`, and when that gives a move, `_on_move(move)`. When something was handled, mark the input as
   handled.
 - Debug shot (`--shot=<png>`): `--level=N` picks a level; `--keys=<record>` is walked like `apply_record` but through
   `_on_undo`, `_on_restart` and `_on_move`, so the screen updates; then `_on_debug_extra()`; wait 1.5 s and one drawn
   frame; save the viewport as PNG; quit. `--date`, `--practice` and `--lang` as in White Shift. Nothing is read or
-  saved.
+  saved. From 0.3.0 also `--safe=l,t,r,b` (only with `_use_safe_area()`).
 
 Default texts in `WhiteText.BASE` (keys used by the screen), Dutch / English:
 
@@ -703,7 +720,7 @@ Acceptance:
   standard text.
 - `refreshed`: a handler connected on the fixture screen is called once per `_refresh()`, both with puzzles and on a
   no-puzzle day, and after a language toggle it sees the new `WhiteText.lang`.
-- `_practice_only`: section 13.1.
+- `_practice_only`: section 13.1. `_max_content_width`, `_use_safe_area`, frozen shot clock: section 14.2.
 - White Shift's UI tests pass unchanged after its `main.gd` extends `WhiteDayScreen` (section 10, step 9).
 
 ### 5.13 WhiteTestRunner and kit tests
@@ -743,10 +760,11 @@ Kit tests: `tests/run_kit_tests.tscn` (root `Node` with `run_kit_tests.gd`, whic
 suites `test_kit.gd`, `test_daily.gd`, `test_seed.gd`, `test_rng.gd`, `test_puzzle_store.gd`, `test_attempt.gd`,
 `test_progress.gd`, `test_text_format.gd`, `test_day_screen.gd`, `test_precompute.gd`, `test_independent.gd`,
 `test_edge.gd`, `test_precompute_edge.gd`, `test_release_020.gd` and (after the tag, section 13.4)
-`test_retest_020.gd`, loaded by path; a suite that does not load is a failed check `suite loads: <path>`. Each suite
+`test_retest_020.gd`, loaded by path; from 0.3.0 also `test_safe_area.gd`, `test_tile_view.gd`, `test_shots.gd` and
+`test_release_030.gd` (section 14.8). A suite that does not load is a failed check `suite loads: <path>`. Each suite
 has `func run(check: Callable, node: Node) -> void` (may await), like White Shift's `extra_tests.gd`. The tag
 `v0.2.0` has 522 checks and the kit CI and the game template run the kit tests with `--min-checks=522`; check counts
-per moment are in section 13.4.
+per moment are in section 13.4 and, from 0.3.0, section 14.6.
 
 Fixture game (`tests/fixtures/`, no `class_name`, loaded with `preload`):
 - `counter_rules.gd`: state is an int starting at 0; move `"U"` (+1) and `"D"` (-1, rejected at 0); solved at 3;
@@ -756,13 +774,15 @@ Fixture game (`tests/fixtures/`, no `class_name`, loaded with `preload`):
 - `fixture_screen.gd`: a `WhiteDayScreen` subclass with a plain `Control` as view, the counter rules, its own save path
   (`user://white_kit_test_progress.json`) and fixture puzzle files `daily.json` (two dates) and `practice.json`
   (two sets), each puzzle `{"par": 3}`. Variants for the `_play_message`, `count_final` and `_practice_only` tests are
-  set through member flags on the fixture (`practice_only` for the last).
+  set through member flags on the fixture (`practice_only` for the last; from 0.3.0 also `max_width` and
+  `safe_area`, section 14.8).
 - `generator.gd`: a `WhitePrecompute` subclass with game id `white-fixture` whose `_generate` returns
   `{"seed": "<hex of seed>", "level": level, "par": level + 1}`, so the default `_summary` is exercised.
 - Runner fixtures (`.tscn` plus `.gd`, each a root `Node` whose script extends `WhiteTestRunner`): `runner_script_error`,
   `runner_push_error` and `runner_parse_error` (section 13.2); `runner_await_error` and `runner_invalid_dates` (added
   by the 0.2.0 test round: a script error after an `await`, and invalid dates through `WhiteDaily` in a separate
   process so its engine output can be inspected).
+- From 0.3.0: `tile_view_fixture.gd`, `fixture_main.tscn` and `shots.txt` (section 14.8).
 
 `test_precompute.gd` runs the fixture generator as a child Godot process:
 `OS.execute(OS.get_executable_path(), ["--headless", "--path", <globalized res://>, "-s", <generator>, "--", ...args],
@@ -832,6 +852,10 @@ file; a merge that adds nothing leaves the file's modification untouched and pri
 a data file holding a JSON list gives `cannot read` and exit code 1; for White Shift, `build_puzzles.gd` writes
 byte-identical output to the old tool for the same arguments while the generator is unchanged (section 10, step 8).
 
+Parallel builds: a game builds a large pool in several processes with `--practice=N --start=S` into separate files and
+merges them one by one into the data file with `--merge` (practice keys merge like dates). White Tally built its pool
+this way; White Sum and White Drift do the same.
+
 ## 6. Formats
 
 ### 6.1 Record grammar
@@ -847,7 +871,8 @@ A record is a string with one entry per action, in order:
 
 White Shift: move length 1, tokens `R L D U`. White Tally chooses its own tokens; a natural form is cell plus
 direction (for example `C3R`, move length 3), which covers both a swap with a neighbour and a slide into an empty
-neighbouring cell - its rules decide which of the two applies.
+neighbouring cell - its rules decide which of the two applies. White Tally and White Sum use direction plus cell
+(`RB1`, length 3); White Drift uses one letter per tilt (`R L D U`, length 1).
 
 ### 6.2 Puzzle files
 
@@ -876,7 +901,9 @@ The kit has no `project.godot`. For its own tests:
 
 `templates/host/project.godot`: `config_version=5`, name `White Kit host`, features `4.7` and `GL Compatibility`, GL
 Compatibility renderer, no main scene, default GDScript warnings (so kit code must be free of warnings with default
-settings; intended integer divisions carry `@warning_ignore("integer_division")`).
+settings; intended integer divisions carry `@warning_ignore("integer_division")`). From 0.3.0 the main scene is
+`res://addons/white_kit/tests/fixtures/fixture_main.tscn` and the window and stretch settings are those of the games
+(section 14.6), so the screenshot tool can be tested in the host.
 
 ### 7.2 Kit CI (`.github/workflows/ci.yml`)
 
@@ -884,11 +911,13 @@ Triggers: pushes to `develop` and `main`, pull requests to `main`, tags `v*`, ma
 
 1. Checkout to `host/addons/white_kit`; copy the host template to `host/project.godot`.
 2. `uses: ./host/addons/white_kit/ci/setup-godot` (section 7.3).
-3. Import the host project; run the kit tests with `--min-checks=522` (section 13.4).
+3. Import the host project; run the kit tests with `--min-checks=522` (section 13.4; 635 and then the 0.3.0 count,
+   section 14.6).
 4. Reference vectors: run `tools/rng_vectors.gd` in the host and `python3 -I tools/reference/white_rng.py`; `diff`
    their outputs.
 5. Determinism grep (section 5.4).
 6. On a tag: the tag must equal `v` followed by the content of `VERSION`.
+7. From 0.3.0: screenshot tool smoke test (section 14.6).
 
 ### 7.3 Composite action `ci/setup-godot/action.yml`
 
@@ -912,7 +941,8 @@ number of checks of its own tests (`MIN_CHECKS`). Triggers, concurrency and perm
 4. Import; kit tests (`res://addons/white_kit/tests/run_kit_tests.tscn` with `-- --min-checks=522`, the kit's check
    count at the pinned tag); game tests (`res://tests/run_tests.tscn` with `-- --min-checks=<N>`).
 5. Puzzles left (only when `data/daily.json` exists): days from today on, warning below 14 - White Shift's step.
-6. Export Web (release), upload artifact, Pages artifact and deploy on `develop` (not on pull requests) - White Shift's
+6. From 0.3.0: debug screenshots from `tools/shots.txt` (only when the file exists) as artifact `shots` (section 14.6).
+7. Export Web (release), upload artifact, Pages artifact and deploy on `develop` (not on pull requests) - White Shift's
    steps and Pages job.
 
 When a game updates the kit, it takes the kit threshold from the template of the new version (the changelog names it).
@@ -960,6 +990,9 @@ covers its needs, including the additions R1, R2 and R3 below.
 - `WhiteDayScreen` with its own board view, texts and share template; a game may override `_share()` when the
   three-level line does not fit (for example a line with the clock).
 - `WhiteProgress`, `WhiteText`, `WhiteFormat`, `WhiteTestRunner`, the CI template.
+- From 0.3.0 (optional for White Tally, used by White Sum and White Drift): `WhiteTileView`, `WhiteSafeArea`, the
+  screen hooks `_max_content_width()` and `_use_safe_area()`, and the screenshot tools. White Tally's optional
+  migration is in section 14.7.
 
 ## 10. Migration plan for White Shift
 
@@ -1183,10 +1216,477 @@ documentation of 0.1.0 behaviour that this design now describes (`refreshed`, `i
 ### 13.6 Open after 0.2.0
 
 - Kit CI threshold: raise `--min-checks` in `.github/workflows/ci.yml` to 635 together with the test commit 896e395.
-  `templates/ci.yml` stays at 522 until the next tag (13.4).
+  `templates/ci.yml` stays at 522 until the next tag (13.4). Planned as the first step of 0.3.0 (section 14.6, board
+  card #008).
 - Pull request `develop` -> `main` as a merge commit (brings `v0.1.0` and `v0.2.0` into `main`); kit CI green on
   `main`.
-- White Shift: compare the debug screenshots of section 10 on `v0.2.0` with those on `v0.1.0` (expected
-  pixel-identical; not yet done).
+- White Shift: compare the debug screenshots of section 10 on `v0.2.0` with those on `v0.1.0`. Done (board card #009):
+  seven scenarios byte-identical. Repeatable from 0.3.0 with `tools/shots.sh before-after` (section 14.5, card #010).
 - White Tally pins `v0.2.0` and removes its interim overrides of `_open_day()` and `_refresh()` in favour of
-  `_practice_only()`.
+  `_practice_only()`. Done (White Tally design 7.1).
+
+## 14. Release 0.3.0 (designed)
+
+Status: designed 2026-11-18 (board card #011), not built. Decision and alternatives: ADR 0007. Everything is new API
+and backward compatible (new classes, two new screen hooks with defaults that keep today's behaviour), so the version
+is MINOR. The release also contains board cards #008 (kit CI threshold) and #010 (screenshot comparison).
+
+Users: White Sum and White Drift build their phase 1b on it. White Shift needs no change. White Tally may migrate in
+optional steps (14.7); its puzzles stay byte-identical whatever it does.
+
+### 14.1 Scope
+
+| Item | Kit 0.3.0 | Stays in each game |
+|---|---|---|
+| Board view: layout, cell under a point, tile registry with stable ids, animation phases, shake and nudge, swipe, tap-tap and keyboard input | `WhiteTileView` (14.4) | Tile, block and link drawing (hooks); which move a gesture means (hooks); converting the game's traced step into view steps. |
+| Safe area | `WhiteSafeArea` (14.3) and screen hook `_use_safe_area()` (14.2) | Whether to use it. |
+| Maximum width of the screen column (desktop finding of the White Tally test) | Screen hook `_max_content_width()` (14.2) | The value (720 recommended). |
+| Deterministic debug screenshots | Frozen clock in `--shot` mode (14.2) | - |
+| Screenshot scenarios, comparison, before/after a kit update (#010) | `tools/shots.sh`, `tools/compare_shots.gd` (14.5) | `tools/shots.txt` (its scenarios). |
+| CI | Screenshot step in `templates/ci.yml`; kit threshold 635, then the 0.3.0 count (#008, 14.6) | `MIN_CHECKS`. |
+| State, cell names, move tokens, groups or runs, gravity or tilt, waves, traced step | - | The rules class (`TallyBoard`, `SumBoard`, `DriftBoard`). |
+| Solver, beam, greedy, generator, measuring and verify tools | - | `sim/`, `tools/`. |
+
+### 14.2 Screen changes (`WhiteDayScreen`)
+
+New member `margin: MarginContainer`: the root margin container that `_build()` creates (in 0.2.0 a local variable).
+
+New hooks (section 5.12 table):
+
+```gdscript
+func _max_content_width() -> int    # [0] = no limit; otherwise the column is at most this wide, centred
+func _use_safe_area() -> bool       # [false]; true adds the display safe area to the margins
+```
+
+New internal functions:
+
+```gdscript
+func _insets_for(viewport_size: Vector2) -> Dictionary   # {"left", "top", "right", "bottom"} as ints; pure apart from hooks and _debug
+func _apply_insets() -> void                             # sets the four margin_* constants of `margin` from _insets_for
+```
+
+`_insets_for(vp)`:
+
+1. `ins` = `WhiteSafeArea.insets(vp, str(_debug.get("safe", "")))` when `_use_safe_area()`, else all four 0.0.
+2. `left = WhiteTheme.MARGIN + int(ins.left)`, `top = WhiteTheme.MARGIN + int(ins.top)`,
+   `right = WhiteTheme.MARGIN + int(ins.right)`, `bottom = WhiteTheme.MARGIN + int(ins.bottom)`.
+3. When `_max_content_width() > 0`: `extra = maxi(0, (int(vp.x) - left - right - _max_content_width()) / 2)` (integer
+   division, `@warning_ignore("integer_division")`); `left += extra`; `right += extra`.
+4. Return the four values.
+
+`_apply_insets()` calls `_insets_for(get_viewport_rect().size)` and sets `margin_left`, `margin_top`, `margin_right`,
+`margin_bottom`. It is called once at the end of `_build()` and on every `get_viewport().size_changed` (connected in
+`_build()`). The screen's root `Control` keeps its full-rect layout; only the margins change. With both hooks at their
+defaults every margin is 24, as in 0.2.0.
+
+`--safe=l,t,r,b` (viewport units, comma-separated) is parsed like any debug argument; it only has an effect when
+`_use_safe_area()` is true. It replaces the measured safe area (White Tally's behaviour).
+
+Frozen clock in debug shots: while `_debug.has("shot")`, `_elapsed()` returns `times[level]` without adding
+`Time.get_ticks_msec() - _clock_from`. The clock still starts and stops as before (so `_store()` and `_stop_clock()`
+are unchanged), but every clock text in a screenshot is the stored time: `0:00` in practice and on a fresh day.
+Outside `--shot` nothing changes. Effect on existing games: a screenshot made with `--keys` shows `0:00` where 0.2.0
+could show `0:01`.
+
+Recommended for new games: `_max_content_width()` returns 720 (the design width of the series) and `_use_safe_area()`
+returns true. With the project settings of the series (base size 720x1280, stretch `canvas_items`, aspect `expand`)
+a 1280x720 desktop window has a viewport of about 2276x1280, so the column becomes a centred portrait column with the
+board as large as on a phone.
+
+### 14.3 WhiteSafeArea (`ui/safe_area.gd`)
+
+Moved from White Tally's `ui/safe_area.gd` (`TallySafeArea`, with the window-relative fix for second monitors). The
+`apply` function is not moved: the screen does that (14.2).
+
+```gdscript
+class_name WhiteSafeArea
+static func insets(viewport_size: Vector2, override: String = "") -> Dictionary
+	# {"left", "top", "right", "bottom"} as floats in viewport units
+static func from_rects(safe: Rect2, win: Vector2, viewport_size: Vector2) -> Dictionary
+static func parse(text: String) -> Dictionary
+```
+
+- `insets`: a non-empty `override` returns `parse(override)`. Otherwise `win = Vector2(DisplayServer.window_get_size())`;
+  when `win.x <= 0` or `win.y <= 0`: all zero. `safe = Rect2(DisplayServer.get_display_safe_area())`; unless
+  `OS.has_feature("web")`, `safe.position -= Vector2(DisplayServer.window_get_position())` (the safe area is in desktop
+  coordinates; this makes it window-relative). Return `from_rects(safe, win, viewport_size)`.
+- `from_rects`: when `safe.size.x <= 0` or `safe.size.y <= 0`: all zero. With `k = viewport_size / win`:
+  `left = max(0, safe.position.x) * k.x`, `top = max(0, safe.position.y) * k.y`,
+  `right = max(0, win.x - safe.end.x) * k.x`, `bottom = max(0, win.y - safe.end.y) * k.y`.
+- `parse`: split on `,`; part `i` is `float(part)` when present, else 0.0 (Godot's `float()` of junk is 0.0); keys in
+  the order left, top, right, bottom.
+
+Acceptance:
+- `from_rects(Rect2(10, 20, 380, 800), Vector2(400, 840), Vector2(800, 1680))` gives left 20, top 40, right 20,
+  bottom 40.
+- A safe rect larger than the window gives all zero; a safe rect equal to the window gives all zero; an empty safe rect
+  gives all zero.
+- `parse("40,80,40,60")` gives 40/80/40/60; `parse("1,2")` gives 1/2/0/0; `parse("a,b,c,d")` gives all zero.
+- `insets(Vector2(720, 1280), "5,6,7,8")` returns the parsed override without reading the display.
+
+### 14.4 WhiteTileView (`ui/tile_view.gd`)
+
+`class_name WhiteTileView extends Control`. A board of `w x h` square cells with animated tiles. Generalised from White
+Tally's `TallyBoardView` (design 10 there): the mechanics are the kit's, the look of a tile is the game's. Coordinates
+follow assumption A11: cell index `i = y * w + x`, `x` to the right, `y` upwards, `(0, 0)` bottom-left; screen down is
+direction `D`.
+
+```gdscript
+class_name WhiteTileView extends Control
+enum Dir { R, L, D, U }                  # 0, 1, 2, 3
+enum InputMode { CELL_MOVES, BOARD_SWIPES }
+
+signal move_chosen(code: int)            # a game move code returned by a resolve hook (never -1)
+signal finished()                        # an animation reached its end (normally or by finish_animation)
+
+# Look and timing; defaults are White Tally's values. A game changes them in _init().
+var board_color := Color("232933")
+var grid_color := Color("2C333F")
+var fit := 0.3                           # board margin in cells, added to w and h when sizing
+var tile_gap := 0.08                     # gap between tiles, in cells
+var tile_radius := 0.18                  # corner radius, in cells (board, tiles, marks)
+var mark_color := WhiteTheme.ACCENT      # selection and cursor outline
+var mark_px := 4.0
+var vanish_time := 0.18
+var vanish_pause := 0.06
+var vanish_scale := 0.7
+var shake_time := 0.15
+var shake_cycles := 3
+var shake_px := 4.0
+var nudge_time := 0.15
+var nudge_px := 6.0
+var swipe_frac := 0.4                    # drag as part of a cell that fires a swipe during the drag
+var swipe_min_px := 24.0                 # drag in px that still counts as a swipe on release
+
+var input_mode := InputMode.CELL_MOVES
+var input_enabled := true
+var grid_w := 0
+var grid_h := 0
+```
+
+Public functions:
+
+```gdscript
+func show_cells(w: int, h: int, values: PackedByteArray) -> void  # new board, no animation; resets selection, grab and cursor
+func show_values(values: PackedByteArray) -> void                 # same board, no animation; resets selection and grab, keeps cursor
+func clear() -> void                                              # no board; nothing drawn; input ignored
+func has_board() -> bool
+func animate(steps: Array, before: PackedByteArray = PackedByteArray()) -> void
+func finish_animation() -> void
+func busy() -> bool                                               # an animation is running
+func shown() -> PackedByteArray                                   # cell values after the current animation
+func selected() -> int                                            # selected cell, -1 none
+func cursor() -> int
+func cursor_visible() -> bool
+func debug_select(cell: int) -> void
+func shake_cell(cell: int) -> void                                # shakes the tile in that cell; nothing when empty
+func nudge(dir: int) -> void                                      # shifts the whole board a little towards dir and back
+func key_move(event: InputEventKey) -> Variant                    # keyboard; returns a move code or null (below)
+
+static func layout(area: Vector2, w: int, h: int, fit: float) -> Dictionary   # {"cell": float, "origin": Vector2}
+static func cell_at(p: Vector2, lay: Dictionary, w: int, h: int) -> int        # -1 outside the board
+static func drag_dir(d: Vector2) -> int                                        # dominant axis; ties go vertical; screen down is D
+static func neighbour_dir(a: int, b: int, w: int) -> int                       # -1 when not orthogonal neighbours
+static func key_dir(keycode: int) -> int                                       # arrows and WASD, else -1
+static func step_cell(i: int, d: int, w: int, h: int) -> int                   # clamped at the edge
+static func build_phases(w: int, ids: PackedInt32Array, steps: Array, vanish_total: float) -> Dictionary
+	# {"phases": [...], "ids": PackedInt32Array}; pure, tested
+```
+
+The static helpers are White Tally's (`layout`, `cell_at`, `drag_dir`, `neighbour_dir`, `key_dir`, `step_cell`) with
+`fit` as a parameter instead of a constant; their results are identical for `fit = 0.3`:
+`cell = max(1, floor(min(area.x / (w + fit), area.y / (h + fit))))`, `origin = (area - Vector2(w, h) * cell) / 2`.
+
+Hooks (games override; defaults in brackets):
+
+| Hook | Purpose |
+|---|---|
+| `_is_tile(value: int) -> bool` | Which non-zero cell values are tiles (move, animate, can be selected). Others are static cells such as blocks. [`value != 0`] |
+| `_resolve_cell_move(cell: int, dir: int) -> int` | `CELL_MOVES`: the game move code for "the tile in `cell` moves towards `dir`", or -1 when ignored. [-1] |
+| `_resolve_board_swipe(dir: int) -> int` | `BOARD_SWIPES`: the game move code for a swipe or arrow key towards `dir`, or -1 when ignored. [-1] |
+| `_draw_static(rect: Rect2, value: int) -> void` | Draw a static cell. [nothing] |
+| `_draw_tile_body(rect: Rect2, value: int, alpha: float) -> void` | Draw a tile's body. [rounded square in `WhiteTheme.DIM` with `alpha`, radius `tile_radius`] |
+| `_draw_links(tiles: Array) -> void` | Draw between tiles (White Tally: join bars). `tiles` is described below. [nothing] |
+| `_draw_tile_face(rect: Rect2, value: int, alpha: float, scale: float) -> void` | Draw a tile's marks (pips, numerals, dots). [nothing] |
+
+Steps (input of `animate`), each a Dictionary:
+
+| Step | Fields | Phase |
+|---|---|---|
+| move | `"kind": "move"`, `"moves": [[from, to], ...]`, and either `"time"` (seconds) or `"speed"` (cells per second); optional `"ease"` (bool, default false) | All listed tiles move at once. Duration `time`, or `max(1.0, longest move) / speed`, where a move's length is the larger of its `abs(dx)` and `abs(dy)` in cells. Position `from.lerp(to, t)` with `t = sec / dur` clamped to 0..1; with `ease`: `t = 1 - (1 - t)^2`. |
+| vanish | `"kind": "vanish"`, `"cells": [...]` | The tiles fade (alpha 1 to 0) and shrink (scale 1 to `vanish_scale`) over `vanish_time`, then stay invisible for `vanish_pause`; removed at the end. Duration `vanish_time + vanish_pause`. |
+
+- Unknown kinds: `push_error` and skipped. A move whose `from` holds no tile: `push_error` and that move is skipped.
+- Moves of one step are applied simultaneously to the id map: first every `from` cell is cleared, then every `to` cell
+  gets the id that was at its `from`. A swap is `[[a, b], [b, a]]`.
+- The values array behind `shown()` is updated in the same way (vanish sets the cells to 0). Static cells never move
+  and are never part of a step.
+- White Tally's phases map exactly: swap = move `[[a, b], [b, a]]`, `time` 0.12, `ease`; slide = move `[[from, to]]`,
+  `time` 0.10, `ease`; fall = move with the fall pairs, `speed` 16.0; vanish = vanish. White Tally's `far` (largest
+  `dy`, at least 1.0) is the same duration rule.
+
+`build_phases(w, ids, steps, vanish_total)` turns steps into phases with the ids before the animation and returns the
+phases plus the ids after it, exactly like White Tally's `build_phases` (`vanish_total` is `vanish_time +
+vanish_pause`). A phase is `{"kind": "move" or "vanish", "dur": float, "ids": [...], "from": [Vector2...], "to":
+[Vector2...], "ease": bool}`, positions in cells with `y` up.
+
+Tile registry: each tile has a stable id from `show_cells`/`show_values` (the cell index it started in) with a value,
+a position (`Vector2` in cells), a scale and an alpha. `animate(steps, before)`:
+
+1. `finish_animation()`; selection cleared; grab released.
+2. When `before` is not empty and differs from `shown()`: `show_values(before)` first.
+3. `build_phases` from the current ids; the new ids and values become current at once (so `shown()` is the end state);
+   the phases play over the following frames (`_process`), and `finished` is emitted after the last one.
+4. Keyboard follow: when the move came from a keyboard grab (see input), the cursor moves to the cell that holds the
+   grabbed tile's id after the animation; when that tile vanished, the cursor stays.
+
+`finish_animation()` applies all remaining phases at their end, clears them, redraws and emits `finished` (only when an
+animation was running). An empty `steps` list shows nothing new and emits nothing.
+
+Drawing (`_draw`), nothing without a board. With `lay = layout(size, grid_w, grid_h, fit)`, `cell = lay.cell`,
+`o = lay.origin + nudge offset`:
+
+1. Board: a `StyleBoxFlat` in `board_color` with corner radius `int(cell * tile_radius)`, rect from
+   `o - (rim, rim)` with size `grid + 2 * rim`, `rim = cell * 0.1`, `grid = Vector2(grid_w, grid_h) * cell`.
+2. Grid lines in `grid_color`, width 2, between columns and between rows.
+3. Static cells: `_draw_static(cell_rect(i), value)` in cell index order, where `cell_rect` is the cell's square shrunk
+   by `tile_gap` (side `cell * (1 - tile_gap)`, centred).
+4. Live tiles in ascending id order: `_draw_tile_body(rect, value, alpha)`, with `rect` centred on the tile position
+   (screen centre `o + Vector2(pos.x + 0.5, grid_h - 1 - pos.y + 0.5) * cell`, plus the shake offset for a shaking
+   tile: `sin(k * TAU * shake_cycles) * shake_px * (1 - k)` horizontally, `k = elapsed / shake_time`) and side
+   `cell * (1 - tile_gap) * scale`.
+5. `_draw_links(tiles)`, where `tiles` is an Array of Dictionaries in ascending id order with `"id"`, `"value"`,
+   `"pos"` (cells), `"center"` (px), `"rect"`, `"scale"`, `"alpha"`, plus `"cell"` (px size of a cell) in every entry.
+6. Live tiles again: `_draw_tile_face(rect, value, alpha, scale)`.
+7. Marks: the selected cell as a solid outline (`mark_color`, `mark_px`, radius `int(cell * tile_radius)`, no fill)
+   around `cell_rect`; the cursor, when visible and not equal to the selection, as a dashed outline (dash 10 px) on the
+   same rect.
+
+Nudge: during `nudge_time` after `nudge(dir)`, the board origin is offset by `unit(dir) * nudge_px * sin(PI * k)`,
+`k = elapsed / nudge_time`, with `unit` in screen terms (R right, L left, U up, D down). Shake and nudge redraw every
+frame while running and do not block input.
+
+Input in `CELL_MOVES` (White Tally design 10.4, unchanged in behaviour):
+
+- Ignored without a board, when `input_enabled` is false, and for any mouse button other than the left.
+- Swipe: a press on a cell holding a tile, then a drag. During the drag the swipe fires as soon as the drag length
+  reaches `swipe_frac * cell`; otherwise on release when the length is at least `swipe_min_px`. Direction:
+  `drag_dir(d)`. A press outside the board or on an empty cell never swipes.
+- Tap (a press that ends within `swipe_min_px`): no selection -> select the cell when it holds a tile; tap on the
+  selected cell -> deselect; tap on an orthogonal neighbour (tile or empty) -> a cell move from the selected cell
+  towards it, then deselect; tap on any other tile -> select it instead; tap on another empty cell or outside the
+  board -> deselect.
+- A cell move: `finish_animation()`; `code = _resolve_cell_move(cell, dir)`; when -1: `shake_cell(cell)` and nothing
+  else; otherwise clear selection and grab and emit `move_chosen(code)`.
+- Keyboard (`key_move`, called by the game from the screen's `_key_move`): the first arrow or WASD key only shows the
+  cursor (at its current cell, initially 0) and returns null. Without a grab, arrows/WASD move the cursor
+  (`step_cell`) and return null. Space or Enter (also keypad Enter) on a tile grabs it (shown as selected); on a grab
+  it releases it; returns null. Esc releases the grab; returns null. With a grab, an arrow/WASD makes a cell move from
+  the cursor: on -1 the tile shakes, the grab stays and null is returned; otherwise the grab is released, the follow
+  id is remembered (step 4 of `animate`) and the code is returned (the screen then plays it; `move_chosen` is not
+  emitted for keyboard moves).
+
+Input in `BOARD_SWIPES`:
+
+- A left press anywhere inside the view (on or off the board), then a drag: fires during the drag at
+  `swipe_frac * cell`, or on release at `swipe_min_px`; direction `drag_dir(d)`. Taps do nothing. Then
+  `finish_animation()`; `code = _resolve_board_swipe(dir)`; when -1: `nudge(dir)`; otherwise emit `move_chosen(code)`.
+- Keyboard: arrows/WASD give `_resolve_board_swipe(dir)`: -1 -> `nudge(dir)` and null; otherwise the code. Space,
+  Enter and Esc return null. No cursor, no selection.
+
+The view does not know the rules beyond the two resolve hooks, does not keep the attempt, and never sets the screen's
+`_replaying`. Touch input arrives as emulated mouse events (Godot's default `emulate_mouse_from_touch`), as in White
+Tally.
+
+### 14.5 Screenshot scenarios and comparison (#010)
+
+A game lists its debug screenshot scenarios once, in `tools/shots.txt`; CI and the before/after comparison of a kit
+update both read it.
+
+Scenario file: one scenario per line, `<name> <W>x<H> [arguments...]`. Names match `[a-z0-9-]+` and are unique;
+arguments are passed to the game after `--` (for example `--practice --level=1 --lang=en`). Empty lines and lines
+starting with `#` are ignored. Example (White Tally's current CI shots):
+
+```
+easy 720x1280 --practice --level=0
+medium 720x1280 --practice --level=1 --lang=en
+hard 720x1280 --practice --level=2
+selected 720x1280 --practice --level=1 --sel=0
+solved 720x1280 --practice --level=0 --best
+phone-safe-area 720x1280 --practice --level=1 --safe=40,80,40,60
+desktop 1280x720 --practice --level=1
+```
+
+`tools/shots.sh` (bash, `set -euo pipefail`, executable bit committed):
+
+```
+shots.sh run <project dir> <scenario file> <out dir>
+shots.sh compare <project dir> <dir a> <dir b> [<diff dir>]
+shots.sh before-after <project dir> <scenario file> <old kit ref> [<new kit ref>]
+```
+
+- `run`: creates `<out dir>` (made absolute first), then per scenario
+  `timeout 120 xvfb-run -a -s "-screen 0 1920x1440x24" godot --path <project dir> --rendering-driver opengl3
+  --resolution <W>x<H> -- --shot=<out dir>/<name>.png <arguments>`. A malformed line prints
+  `bad scenario line <n>` to stderr and counts as missing. Afterwards it prints `shot <name> ok` or
+  `shot <name> missing` per scenario and exits 1 when any is missing, else 0. The virtual screen must be at least as
+  large as the largest resolution; 1920x1440 is fixed, so scenarios wider than 1920 or taller than 1440 are rejected as
+  bad lines. (A smaller virtual screen than the window would count as a safe-area inset in games that use it.)
+- `compare`: runs `godot --headless --path <project dir> -s res://addons/white_kit/tools/compare_shots.gd -- --a=<abs
+  a> --b=<abs b> [--diff=<abs diff>]` and returns its exit code.
+- `before-after`: compares the game's screenshots under two kit versions without changing the game's own files.
+  1. When not already running from a copy (environment variable `WHITE_SHOTS_COPY` unset): copy itself to a new
+     `mktemp -d` folder and `exec` that copy with `WHITE_SHOTS_COPY=1` and the same arguments (the submodule checkout
+     below replaces the script file while it runs).
+  2. `kit=<project dir>/addons/white_kit`; fail with exit code 2 and `kit has local changes` when
+     `git -C $kit status --porcelain` is not empty.
+  3. `orig=$(git -C $kit rev-parse HEAD)`; `new=<new kit ref>` or `$orig` when omitted. A trap restores
+     `git -C $kit checkout --quiet $orig` on every exit.
+  4. Check out `<old kit ref>`; `godot --headless --path <project dir> --import`; `run` into
+     `<project dir>/build/shots/before`.
+  5. Check out `$new`; import; `run` into `<project dir>/build/shots/after`.
+  6. While `$new` is checked out: `compare` the two folders with diff folder `<project dir>/build/shots/diff`; its exit
+     code is the script's exit code. The new ref must therefore be 0.3.0 or later (it contains the comparison tool);
+     the old ref may be any tag that has the screen's `--shot` mode (0.1.0 or later).
+  7. The trap restores the original kit commit. The game's `build/` is ignored by git, so the worktree stays clean.
+
+`tools/compare_shots.gd` (`extends SceneTree`, no `class_name`), arguments `--a=<dir> --b=<dir> [--diff=<dir>]`:
+
+- Missing `--a` or `--b`, or a folder that cannot be opened: usage line or `cannot open <dir>` on stderr, exit code 2.
+- The names are the sorted union of `*.png` files in both folders. Per name, one line:
+  - only in one folder: `missing <name> in a` or `missing <name> in b`;
+  - both present but either does not load (`Image.load_from_file` not `OK`): `unreadable <name>`;
+  - different sizes: `differs <name> size <wa>x<ha> <wb>x<hb>`;
+  - same size: both converted to `Image.FORMAT_RGBA8`; when `get_data()` is equal: `same <name>`; otherwise count the
+    pixels whose four bytes differ and their bounding box: `differs <name> <n> pixels box <x>,<y>,<w>,<h>`.
+- With `--diff`: for every name that `differs` with the same size, write `<diff>/<name>.png`: every pixel of `a` as
+  grey (`0.5 * luminance`, alpha 1) and every differing pixel pure red (`#FF0000`).
+- Last line `shots: <same> same, <other> different`; exit code 0 when every name is `same`, else 1.
+
+The bounding box makes "only the clock differs" or "only the column moved" visible without opening images.
+
+### 14.6 CI and thresholds (#008)
+
+- First commit of the 0.3.0 work: kit CI `--min-checks=635` (the count on `develop` since commit 896e395). From then
+  on the rule of 13.4 applies: every commit that adds kit checks raises the kit CI threshold to the new count.
+- `templates/ci.yml` gets `--min-checks=<count at v0.3.0>` in the tag commit, and a screenshot step after the game
+  tests:
+
+```yaml
+      - name: Debug screenshots (tools/shots.txt)
+        if: hashFiles('tools/shots.txt') != ''
+        run: |
+          sudo apt-get install -y -qq xvfb libgl1-mesa-dri >/dev/null
+          addons/white_kit/tools/shots.sh run . tools/shots.txt build/shots
+
+      - uses: actions/upload-artifact@v7
+        if: always() && hashFiles('tools/shots.txt') != ''
+        with:
+          name: shots
+          path: build/shots
+          retention-days: 7
+```
+
+- Host template (`templates/host/project.godot`): `run/main_scene="res://addons/white_kit/tests/fixtures/fixture_main.tscn"`,
+  viewport 720x1280, stretch mode `canvas_items`, aspect `expand` (the series' settings), so the fixture screen can be
+  shot like a game.
+- Kit CI, new last step "Screenshot tool smoke test": install `xvfb libgl1-mesa-dri`; `tools/shots.sh run host
+  host/addons/white_kit/tests/fixtures/shots.txt build/a`; the same into `build/b`; `tools/shots.sh compare host build/a
+  build/b` must exit 0 (determinism, A12). The fixture `shots.txt` has two scenarios: `tiles 720x1280 --practice` and
+  `wide 1600x900 --practice`.
+- The determinism grep stays on `core/` and `tools/`; `ui/tile_view.gd` uses no randomness.
+
+### 14.7 Migration
+
+White Shift: nothing to do. With the hooks at their defaults its screen is pixel-identical; its debug screenshots
+without `--keys` stay identical, with `--keys` only the clock may change (14.2). Updating its pin is a normal kit update
+(section 8); optionally it adds a `tools/shots.txt` with the scenarios of section 10.
+
+White Tally (optional, one card, each step one commit, tests green after each):
+
+| Step | Change | Check |
+|---|---|---|
+| 1 | Pin `v0.3.0`; kit threshold from the new template. | Game tests green; `git diff <before>..HEAD -- sim data tools` empty (puzzles byte-identical by construction). |
+| 2 | Add `tools/shots.txt` with its seven CI scenarios (14.5 example) and replace the CI screenshot step by the template's. | `shots.sh before-after . tools/shots.txt v0.2.0 v0.3.0`: all `same`. |
+| 3 | Remove `ui/safe_area.gd` and `_apply_safe_area`; `_use_safe_area()` returns true; `_max_content_width()` returns 720. Tests that used `TallySafeArea` use `WhiteSafeArea`. | Shots: `desktop` differs (intended: centred column); the 720x1280 shots and `phone-safe-area` are `same`. |
+| 4 | `TallyBoardView extends WhiteTileView`: keeps its colours and pips (`_draw_tile_body`, `_draw_tile_face`), joins (`_draw_links`), `_resolve_cell_move` = `board.canonical(shown(), cell * 4 + dir)`; `update_attempt` converts `step_traced` to view steps (mapping in 14.4); its pure helper tests call the kit statics. | Shots compared with step 3: all `same`. |
+
+White Tally's own design and ADRs are updated in its repository when it takes these steps. Nothing in this release
+forces them.
+
+White Sum and White Drift: pin `v0.2.0` during their phase 1a (rules, solver, generator, pool; no screen), and `v0.3.0`
+from their phase 1b (their designs, section 14).
+
+### 14.8 Tests and acceptance
+
+New fixtures (`tests/fixtures/`, no `class_name`):
+
+- `tile_view_fixture.gd`: a `WhiteTileView` subclass. Values: 0 empty, 1 static block, 2 and 3 tiles. `_is_tile(v)` is
+  `v >= 2`. `_resolve_cell_move(cell, dir)`: the target cell in that direction must be on the board and not a block;
+  when it holds a tile of another value: code `cell * 4 + dir`; when empty: code `cell * 4 + dir`; otherwise -1.
+  `_resolve_board_swipe(dir)`: returns `dir` when member `board_moves` is true, else -1. Records every hook call in a
+  member list so tests can inspect drawing order.
+- `fixture_screen.gd` gets member flags `max_width` (int, returned by `_max_content_width()`) and `safe_area` (bool,
+  returned by `_use_safe_area()`), default 0 and false.
+- `fixture_main.tscn`: root `Control` (full rect) with `fixture_screen.gd`, whose `_make_view()` returns a
+  `tile_view_fixture` showing a fixed 4x3 board, for the screenshot smoke test.
+- `shots.txt`: the two scenarios of 14.6.
+
+New suites: `test_safe_area.gd`, `test_tile_view.gd`, `test_shots.gd`, `test_release_030.gd`.
+
+Acceptance (every item is a check):
+
+- Screen (14.2): with default hooks `_insets_for(Vector2(720, 1280))` and `_insets_for(Vector2(2400, 1080))` are 24 on
+  every side; with `max_width` 720: `_insets_for(Vector2(2276, 1280))` gives left and right
+  `24 + (2276 - 48 - 720) / 2 = 778`, top and bottom 24, and `_insets_for(Vector2(720, 1280))` gives 24; with
+  `safe_area` and `_debug.safe = "40,80,40,60"`: 64/104/64/84; with both: left `64 + (vp.x - 128 - 720) / 2`. After
+  `_ready` the margins of `margin` equal `_insets_for(get_viewport_rect().size)`. All screen tests of 0.1.0 and 0.2.0
+  pass unchanged.
+- Frozen clock: on the fixture screen with `_debug.shot` set, after a move and a wait of at least 1.2 s, the clock text
+  is `0:00`; without `shot` it is `0:01` or more.
+- `WhiteSafeArea`: section 14.3.
+- `WhiteTileView` statics: White Tally's helper tests (layout, `cell_at` at the four board corners and just outside,
+  `drag_dir` including the diagonal tie going vertical, `neighbour_dir`, `key_dir`, `step_cell` at the edges) pass
+  against the kit statics with `fit = 0.3`.
+- `build_phases`: a swap `[[a, b], [b, a]]` exchanges the two ids; a move to an empty cell leaves `-1` at the source;
+  a fall step with distances 1 and 3 at speed 16 has duration `3 / 16`; a move with distance 0.5 at speed 16 has
+  duration `1 / 16`; a `time` step has exactly that duration; vanish removes the ids and lasts
+  `vanish_time + vanish_pause`; an unknown kind is skipped with a `push_error`; White Tally's
+  `build_phases` test cases give the same phases after mapping (14.4).
+- `animate`: `shown()` equals the end state at once; `busy()` is true until the phases are done; `finish_animation()`
+  ends it, emits `finished` once and leaves `busy()` false; `animate` with a `before` that differs from `shown()` first
+  shows `before`; static cells keep their place through every step.
+- Drawing order (fixture records): static cells, bodies, links once, faces, in ascending id order; nothing is drawn
+  without a board.
+- `CELL_MOVES` input (simulated with `InputEventMouseButton`/`InputEventMouseMotion` passed to `_gui_input`): a drag of
+  `0.4 * cell` on a tile fires during the motion; 23 px then release is a tap, 24 px a swipe; a press on an empty cell
+  never swipes; tap-tap on a neighbour emits `move_chosen` with the fixture code; an ignored cell move (towards a
+  block) shakes and emits nothing; the right mouse button does nothing; with `input_enabled` false nothing happens.
+- Keyboard in `CELL_MOVES`: first arrow only shows the cursor; arrows move it and clamp at the edge; Space grabs a tile
+  and not an empty cell; an arrow with a grab returns the code; an ignored move keeps the grab; after `animate` the
+  cursor follows the grabbed tile; Esc releases.
+- `BOARD_SWIPES`: a drag anywhere in the view, also outside the board, emits `move_chosen(dir)` when `board_moves` is
+  true; with `board_moves` false it nudges and emits nothing; arrows return the code or null; taps and Space do nothing.
+- Screenshot tools (child processes like `test_precompute.gd`; PNGs written to `user://white_kit_test_shots_*` with
+  `Image.save_png`): two equal folders give exit 0 and `same` lines; one changed pixel gives exit 1 and
+  `differs <name> 1 pixels box x,y,1,1`; a size difference, a missing file in either folder and an unreadable file are
+  reported as specified; the diff image has the red pixel at the changed position; missing `--a` gives exit 2.
+- `tools/shots.sh`: kit CI smoke test of 14.6 green; a malformed scenario line gives exit 1 with `bad scenario line`.
+- White Shift on 0.3.0: its 192 checks green, kit tests green inside it, its seven screenshots compared with
+  `before-after` against `v0.2.0` are `same` (with `--keys` only a clock box may differ).
+- Kit CI green on the branch and on the tag `v0.3.0`; the template threshold equals the tag's check count.
+
+### 14.9 Build order and release
+
+1. Kit CI threshold to 635 (#008).
+2. `WhiteSafeArea`, screen hooks, `margin` member, frozen shot clock, with tests.
+3. `WhiteTileView` with the fixture and tests.
+4. `tools/compare_shots.gd`, `tools/shots.sh`, host template, fixture main scene and `shots.txt`, kit CI smoke test
+   (#010).
+5. `templates/ci.yml` screenshot step; README (WhiteTileView, safe area, shots); `CHANGELOG.md` section `0.3.0` (new
+   classes and hooks, frozen shot clock, shots tooling, thresholds 635 and the tag count); `VERSION` and
+   `WhiteKit.VERSION` `0.3.0`; template threshold to the final count; tag `v0.3.0`.
+6. White Shift check (14.8, last items) before telling the games the tag exists.
+
+Where the tag sits follows section 8: on the commit merged to `main` when the `develop` -> `main` pull request exists;
+otherwise on `develop` as for `v0.1.0` and `v0.2.0` (the same merge-commit rule then applies).
